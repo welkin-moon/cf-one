@@ -1,0 +1,12 @@
+{
+  "name": "cf-one",
+  "private": true,
+  "packageManager": "pnpm@10.13.1",
+  "scripts": {
+    "dev": "pnpm --dir apps/web dev",
+    "deploy": "pnpm --dir apps/web deploy",
+    "typecheck": "pnpm --dir apps/web typecheck",
+    "db:migrate:local": "pnpm --dir apps/web db:migrate:local",
+    "db:migrate:remote": "pnpm --dir apps/web db:migrate:remote"
+  }
+}

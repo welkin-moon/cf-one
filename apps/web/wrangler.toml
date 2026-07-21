@@ -1,0 +1,32 @@
+name = "cf-one"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+workers_dev = true
+
+[[routes]]
+pattern = "lunarlab.uk/*"
+zone_name = "lunarlab.uk"
+
+[[routes]]
+pattern = "20100823.xyz/*"
+zone_name = "20100823.xyz"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cf-one"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "cf-one-media"
+
+[vars]
+APP_NAME = "Lunar Lab"
+ADMIN_EMAILS = ""
+USER_ALLOWLIST = ""
+MIRROR_TARGETS = "{}"
