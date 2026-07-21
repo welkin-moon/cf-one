@@ -4,8 +4,11 @@
   "packageManager": "pnpm@10.13.1",
   "scripts": {
     "dev": "pnpm --dir apps/web dev",
-    "deploy": "pnpm --dir apps/web deploy",
+    "deploy": "pnpm cf:deploy",
+    "cf:provision": "node scripts/provision-cloudflare.mjs",
+    "cf:deploy": "node scripts/deploy-cloudflare.mjs",
     "typecheck": "pnpm --dir apps/web typecheck",
+    "check": "pnpm typecheck && pnpm --dir apps/web dry-run",
     "db:migrate:local": "pnpm --dir apps/web db:migrate:local",
     "db:migrate:remote": "pnpm --dir apps/web db:migrate:remote"
   }

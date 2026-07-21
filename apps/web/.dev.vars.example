@@ -1,0 +1,6 @@
+SESSION_SECRET=replace-with-at-least-32-random-characters
+INVITE_CODE=replace-with-a-long-one-time-invite-code
+ADMIN_EMAILS=you@example.com
+USER_ALLOWLIST=you@example.com,friend@example.com
+# Optional: narrowly scoped runtime token for the admin resource/DNS console.
+CF_API_TOKEN=
