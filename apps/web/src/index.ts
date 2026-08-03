@@ -38,7 +38,9 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (path === '/assets/app.js' && request.method === 'GET') {
     const ownerAware = APP_JS
       .replace('field("邮箱", "email", "email", "you@example.com", true)', 'field("用户名 / 邮箱", "email", "text", "admin 或 you@example.com", true)')
-      .replace('panel("成员登录", form)', 'panel("站主 / 成员登录", form)');
+      .replace('panel("成员登录", form)', 'panel("站主 / 成员登录", form)')
+      .replace('if (String(values.password || "").length < 10 || String(values.password || "").length > 256)', 'if ((String(values.email || "").trim().toLowerCase() !== "admin" && String(values.password || "").length < 10) || String(values.password || "").length > 256)')
+      .replace('密码必须为 10–256 个字符', '成员密码必须为 10–256 个字符');
     return asset(ownerAware, 'text/javascript; charset=utf-8');
   }
   if (path === '/icon.svg' && request.method === 'GET') return icon(profile.accent);
