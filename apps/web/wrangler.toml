@@ -1,4 +1,4 @@
-name = "cf-one"
+name = "cf-one-apex"
 main = "src/index.ts"
 compatibility_date = "2026-07-21"
 workers_dev = true
@@ -27,7 +27,8 @@ bucket_name = "cf-one-media"
 
 [vars]
 APP_NAME = "Lunar Lab"
-ADMIN_EMAILS = ""
+OWNER_USERNAME = "admin"
+ADMIN_EMAILS = "admin@owner.local"
 USER_ALLOWLIST = ""
 MAIL_RECIPIENTS = ""
 EMAIL_DESTINATIONS = ""
