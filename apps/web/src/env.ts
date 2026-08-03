@@ -6,6 +6,8 @@ export interface Env {
   APP_NAME: string;
   SESSION_SECRET: string;
   INVITE_CODE: string;
+  OWNER_USERNAME: string;
+  OWNER_PASSWORD: string;
   ADMIN_EMAILS: string;
   USER_ALLOWLIST: string;
   MAIL_RECIPIENTS: string;
