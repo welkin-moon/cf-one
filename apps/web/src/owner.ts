@@ -1,6 +1,6 @@
 import type { Env } from './env';
 import { issueSession, sessionCookie, verifierProof } from './auth';
-import { HttpError, json, readJson } from './http';
+import { HttpError, json } from './http';
 import { constantTimeEqual, rateLimit } from './security';
 
 const OWNER_ID = 'owner';
@@ -43,9 +43,13 @@ function ownerName(env: Env): string {
   return (env.OWNER_USERNAME || 'admin').trim().toLowerCase();
 }
 
+async function requestBody(request: Request): Promise<{ email?: string; challengeId?: string; proof?: string }> {
+  return request.clone().json<{ email?: string; challengeId?: string; proof?: string }>().catch(() => ({}));
+}
+
 export async function ownerAuthRoutes(request: Request, env: Env, path: string): Promise<Response | null> {
   if (path === '/api/auth/challenge' && request.method === 'POST') {
-    const body = await request.clone().json<{ email?: string }>().catch(() => ({}));
+    const body = await requestBody(request);
     const username = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     if (username !== ownerName(env)) return null;
     await rateLimit(request, env, 'owner-challenge', 12, 15 * 60);
@@ -57,7 +61,7 @@ export async function ownerAuthRoutes(request: Request, env: Env, path: string):
   }
 
   if (path === '/api/auth/login' && request.method === 'POST') {
-    const body = await readJson<{ email?: string; challengeId?: string; proof?: string }>(request);
+    const body = await requestBody(request);
     const username = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     if (username !== ownerName(env)) return null;
     await rateLimit(request, env, 'owner-login', 8, 15 * 60);
