@@ -62,9 +62,10 @@ const bucketName = process.env.CF_ONE_R2_NAME?.trim() || 'cf-one-media';
 const domains = (process.env.CF_ONE_DOMAINS || 'lunarlab.uk,20100823.xyz').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
 const allowedDomains = new Set(['lunarlab.uk', '20100823.xyz']);
 
-if (domains.length !== 2 || domains.some(domain => !allowedDomains.has(domain))) {
+if (domains.length !== 2 || new Set(domains).size !== 2 || domains.some(domain => !allowedDomains.has(domain))) {
   throw new Error('CF_ONE_DOMAINS must contain exactly lunarlab.uk and 20100823.xyz. Subdomains are deliberately forbidden.');
 }
+if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(workerName)) throw new Error('CF_ONE_WORKER_NAME is invalid.');
 
 const [databaseId, kvId, r2Bucket] = await Promise.all([ensureD1(databaseName), ensureKv(kvTitle), ensureR2(bucketName)]);
 const configuredAdmins = (process.env.CF_ONE_ADMIN_EMAILS || '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
@@ -74,7 +75,7 @@ const config = {
   name: workerName,
   main: 'src/index.ts',
   compatibility_date: '2026-07-21',
-  workers_dev: true,
+  workers_dev: false,
   keep_vars: true,
   routes: domains.map(pattern => ({ pattern, custom_domain: true })),
   d1_databases: [{ binding: 'DB', database_name: databaseName, database_id: databaseId, migrations_dir: 'migrations' }],
@@ -87,7 +88,7 @@ const config = {
     USER_ALLOWLIST: process.env.CF_ONE_USER_ALLOWLIST || '',
     MAIL_RECIPIENTS: process.env.CF_ONE_MAIL_RECIPIENTS || '',
     EMAIL_DESTINATIONS: process.env.CF_ONE_EMAIL_DESTINATIONS || '',
-    MANAGED_ZONES: process.env.CF_ONE_MANAGED_ZONES || domains.join(','),
+    MANAGED_ZONES: domains.join(','),
     DEVICE_BINDING: process.env.CF_ONE_DEVICE_BINDING === 'strict' ? 'strict' : 'soft',
     MIRROR_TARGETS: process.env.CF_ONE_MIRROR_TARGETS || '{}',
     SITE_CONFIG: process.env.CF_ONE_SITE_CONFIG || '{}',
