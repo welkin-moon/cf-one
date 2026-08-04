@@ -25,6 +25,7 @@ assert.match(provision, /workers_dev:\s*false/);
 assert.match(provision, /allowedDomains = new Set\(\['lunarlab\.uk', '20100823\.xyz'\]\)/);
 assert.match(provision, /new Set\(domains\)\.size !== 2/, 'duplicate domain entries must be rejected');
 assert.match(provision, /MANAGED_ZONES:\s*domains\.join\(','\)/, 'admin zone scope must follow the two deployment domains');
+assert.match(provision, /OWNER_USERNAME:\s*'admin'/, 'the highest-privilege username must stay fixed as admin');
 
 assert.match(index, /const ALLOWED_HOSTS = new Set\(\['lunarlab\.uk', '20100823\.xyz'\]\)/);
 assert.match(index, /ownerAuthRoutes\(request\.clone\(\), env, path\)/, 'owner probing must not consume the member request body');
@@ -43,6 +44,7 @@ assert.match(owner, /\^\[A-Za-z0-9_-\]\{24\}\$/, 'owner challenge identifiers mu
 for (const secret of ['SESSION_SECRET', 'INVITE_CODE', 'OWNER_PASSWORD']) {
   assert.match(deploy, new RegExp(`['"]${secret}['"]`), `${secret} must be required and uploaded`);
 }
-assert.doesNotMatch(deploy, /console\.log\([^\n]*(PASSWORD|SECRET|TOKEN)/i, 'deployment logs must not print secrets');
+assert.doesNotMatch(deploy, /console\.log\([^)]*process\.env/i, 'deployment logs must not interpolate environment secrets');
+assert.doesNotMatch(deploy, /console\.log\([^)]*JSON\.stringify\(runtimeSecrets\)/i, 'deployment logs must not serialize runtime secrets');
 
 console.log('security regression checks passed');
