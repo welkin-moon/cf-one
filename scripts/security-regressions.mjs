@@ -28,7 +28,8 @@ assert.match(provision, /MANAGED_ZONES:\s*domains\.join\(','\)/, 'admin zone sco
 assert.match(provision, /OWNER_USERNAME:\s*'admin'/, 'the highest-privilege username must stay fixed as admin');
 
 assert.match(index, /const ALLOWED_HOSTS = new Set\(\['lunarlab\.uk', '20100823\.xyz'\]\)/);
-assert.match(index, /ownerAuthRoutes\(request\.clone\(\), env, path\)/, 'owner probing must not consume the member request body');
+assert.match(index, /request\.clone\(\) as unknown as Request/, 'owner probing must clone and explicitly narrow the request type');
+assert.match(index, /ownerAuthRoutes\(ownerRequest, env, path\)/, 'owner probing must not consume the member request body');
 assert.doesNotMatch(index, /endsWith\(['"]\.20100823\.xyz/, 'subdomains must never be accepted by the homepage Worker');
 
 assert.match(auth, /const SESSION_COOKIE = '__Host-cf_one_session'/);
