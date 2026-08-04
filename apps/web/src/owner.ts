@@ -89,7 +89,7 @@ export async function ownerAuthRoutes(request: Request, env: Env, path: string):
     const token = await issueSession({ id: OWNER_ID, email: OWNER_EMAIL, role: 'admin' }, env, request);
     const sessionRequest = new Request(request.url, {
       headers: {
-        cookie: `cf_one_session=${token}`,
+        cookie: `__Host-cf_one_session=${token}`,
         'user-agent': request.headers.get('user-agent') ?? '',
         'accept-language': request.headers.get('accept-language') ?? '',
         'sec-ch-ua': request.headers.get('sec-ch-ua') ?? '',
