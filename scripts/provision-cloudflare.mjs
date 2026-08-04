@@ -83,7 +83,7 @@ const config = {
   r2_buckets: [{ binding: 'MEDIA', bucket_name: r2Bucket }],
   vars: {
     APP_NAME: process.env.CF_ONE_APP_NAME || 'Lunar Lab',
-    OWNER_USERNAME: process.env.CF_ONE_OWNER_USERNAME?.trim() || 'admin',
+    OWNER_USERNAME: 'admin',
     ADMIN_EMAILS: adminEmails,
     USER_ALLOWLIST: process.env.CF_ONE_USER_ALLOWLIST || '',
     MAIL_RECIPIENTS: process.env.CF_ONE_MAIL_RECIPIENTS || '',
