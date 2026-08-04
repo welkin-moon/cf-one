@@ -54,7 +54,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     }, 200, { 'content-type': 'application/manifest+json; charset=utf-8', 'cache-control': 'public, max-age=300' });
   }
   if (path === '/sw.js' && request.method === 'GET') {
-    return new Response(`const CACHE='cf-one-v2';const SHELL=['/','/assets/app.css','/assets/app.js','/icon.svg'];self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));self.addEventListener('fetch',event=>{const url=new URL(event.request.url);if(event.request.method!=='GET'||url.origin!==location.origin||url.pathname.startsWith('/api/')||url.pathname.startsWith('/mirror/'))return;event.respondWith(fetch(event.request).then(response=>{const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));return response}).catch(()=>caches.match(event.request).then(hit=>hit||caches.match('/'))))});`, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache', 'service-worker-allowed': '/' } });
+    return new Response(`const CACHE='cf-one-v2';const SHELL=['/','/assets/app.css','/assets/app.js','/icon.svg'];self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));self.addEventListener('fetch',event=>{const url=new URL(event.request.url);if(event.request.method!=='GET'||url.origin!==location.origin||url.pathname.startsWith('/api/')||url.pathname.startsWith('/mirror/'))return;event.respondWith(fetch(event.request).then(response=>{if(response.ok){const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));}return response}).catch(()=>caches.match(event.request).then(hit=>hit||caches.match('/'))))});`, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache', 'service-worker-allowed': '/' } });
   }
   if (path.startsWith('/app/') && request.method === 'GET') {
     const page = path.split('/').filter(Boolean).pop() ?? '';
@@ -67,8 +67,11 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
 
   const handlers: Array<() => Promise<Response | null>> = [
-    () => ownerAuthRoutes(request, env, path),
-    () => authRoutes(request, env, path),
+    async () => {
+      if (!path.startsWith('/api/auth/')) return null;
+      const owner = await ownerAuthRoutes(request.clone(), env, path);
+      return owner ?? authRoutes(request, env, path);
+    },
     async () => { if (!path.startsWith('/api/tools/')) return null; requireFeature(profile, 'tools'); return toolsRoutes(request, path); },
     async () => { if (!path.startsWith('/api/chat/')) return null; requireFeature(profile, 'chat'); return chatRoutes(request, env, path); },
     async () => { if (!path.startsWith('/api/social/')) return null; requireFeature(profile, 'social'); return socialRoutes(request, env, path); },
