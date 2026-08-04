@@ -69,7 +69,8 @@ async function route(request: Request, env: Env): Promise<Response> {
   const handlers: Array<() => Promise<Response | null>> = [
     async () => {
       if (!path.startsWith('/api/auth/')) return null;
-      const owner = await ownerAuthRoutes(request.clone(), env, path);
+      const ownerRequest = request.clone() as unknown as Request;
+      const owner = await ownerAuthRoutes(ownerRequest, env, path);
       return owner ?? authRoutes(request, env, path);
     },
     async () => { if (!path.startsWith('/api/tools/')) return null; requireFeature(profile, 'tools'); return toolsRoutes(request, path); },
