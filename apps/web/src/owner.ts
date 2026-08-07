@@ -1,10 +1,8 @@
 import type { Env } from './env';
-import { assertSessionSecret, issueSession, readSession, sessionCookie, verifierProof } from './auth';
+import { assertSessionSecret, currentSession, issueSession, sessionCookie, verifierProof } from './auth';
 import { HttpError, json, readJson } from './http';
 import { constantTimeEqual, rateLimit } from './security';
 
-const OWNER_ID = 'owner';
-const OWNER_EMAIL = 'admin@owner.local';
 const OWNER_ITERATIONS = 310_000;
 const encoder = new TextEncoder();
 
@@ -41,15 +39,29 @@ async function ownerVerifier(env: Env, salt: string): Promise<string> {
 
 function ownerName(env: Env): string {
   const value = (env.OWNER_USERNAME || 'admin').trim().toLowerCase();
-  if (!/^[a-z0-9_.-]{1,64}$/.test(value)) throw new HttpError(503, 'OWNER_USERNAME is invalid');
+  if (value !== 'admin') throw new HttpError(503, 'OWNER_USERNAME must remain admin');
   return value;
 }
 
-async function ensureOwnerUser(env: Env): Promise<void> {
-  await env.DB.prepare(`INSERT INTO users (id, email, display_name, role)
-    VALUES (?1, ?2, ?3, 'admin')
-    ON CONFLICT(id) DO UPDATE SET email = excluded.email, display_name = excluded.display_name, role = 'admin'`)
-    .bind(OWNER_ID, OWNER_EMAIL, ownerName(env)).run();
+interface OwnerRow { id: string; email: string; display_name: string; }
+
+async function ensureOwnerUser(env: Env): Promise<OwnerRow> {
+  const username = ownerName(env);
+  let user = await env.DB.prepare('SELECT id, email, display_name FROM users WHERE lower(username) = ?1 LIMIT 1')
+    .bind(username).first<OwnerRow>();
+  if (!user) {
+    const id = 'owner';
+    const email = 'admin@owner.local';
+    await env.DB.prepare(`INSERT INTO users (id, email, display_name, role, username, account_status, is_owner)
+      VALUES (?1, ?2, ?3, 'admin', ?4, 'active', 1)`)
+      .bind(id, email, username, username).run();
+    user = { id, email, display_name: username };
+  } else {
+    await env.DB.prepare(`UPDATE users SET role = 'admin', account_status = 'active', is_owner = 1 WHERE id = ?1`)
+      .bind(user.id).run();
+  }
+  await env.DB.prepare(`UPDATE users SET is_owner = 0 WHERE id <> ?1 AND is_owner <> 0`).bind(user.id).run();
+  return user;
 }
 
 export async function ownerAuthRoutes(request: Request, env: Env, path: string): Promise<Response | null> {
@@ -74,40 +86,35 @@ export async function ownerAuthRoutes(request: Request, env: Env, path: string):
     await rateLimit(request, env, 'owner-login', 8, 15 * 60);
     const challengeId = typeof body.challengeId === 'string' ? body.challengeId : '';
     const proof = typeof body.proof === 'string' ? body.proof : '';
-    if (!/^[A-Za-z0-9_-]{24}$/.test(challengeId) || !/^[A-Za-z0-9_-]{43}$/.test(proof)) {
-      throw new HttpError(400, 'valid owner login challenge required');
-    }
+    if (!/^[A-Za-z0-9_-]{24}$/.test(challengeId) || !/^[A-Za-z0-9_-]{43}$/.test(proof)) throw new HttpError(400, 'valid owner login challenge required');
     const key = `owner:challenge:${challengeId}`;
     const challenge = await env.CACHE.get(key);
     await env.CACHE.delete(key);
     if (!challenge) throw new HttpError(403, 'owner login challenge expired or already used');
     const verifier = await ownerVerifier(env, await ownerSalt(env));
-    const expected = await verifierProof(verifier, challenge);
-    if (!constantTimeEqual(expected, proof)) throw new HttpError(403, 'invalid owner credentials');
+    if (!constantTimeEqual(await verifierProof(verifier, challenge), proof)) throw new HttpError(403, 'invalid owner credentials');
 
-    await ensureOwnerUser(env);
-    const token = await issueSession({ id: OWNER_ID, email: OWNER_EMAIL, role: 'admin' }, env, request);
-    const sessionRequest = new Request(request.url, {
-      headers: {
-        cookie: `__Host-cf_one_session=${token}`,
-        'user-agent': request.headers.get('user-agent') ?? '',
-        'accept-language': request.headers.get('accept-language') ?? '',
-        'sec-ch-ua': request.headers.get('sec-ch-ua') ?? '',
-        'sec-ch-ua-platform': request.headers.get('sec-ch-ua-platform') ?? ''
-      }
-    });
-    const session = await readSession(sessionRequest, env);
-    const response = json({
-      ok: true,
-      session: session ? {
-        id: OWNER_ID,
-        email: ownerName(env),
-        role: 'admin',
-        expiresAt: new Date(session.exp * 1000).toISOString(),
-        csrf: session.csrf,
-        deviceChanged: false
-      } : null
-    });
+    const owner = await ensureOwnerUser(env);
+    const token = await issueSession({ id: owner.id, email: owner.email, role: 'admin' }, env, request);
+    const sessionRequest = new Request(request.url, { headers: {
+      cookie: `__Host-cf_one_session=${token}`,
+      'user-agent': request.headers.get('user-agent') ?? '',
+      'accept-language': request.headers.get('accept-language') ?? '',
+      'sec-ch-ua': request.headers.get('sec-ch-ua') ?? '',
+      'sec-ch-ua-platform': request.headers.get('sec-ch-ua-platform') ?? ''
+    }});
+    const session = await currentSession(sessionRequest, env);
+    const response = json({ ok: true, session: session ? {
+      id: session.sub,
+      email: session.email,
+      username: session.username ?? 'admin',
+      displayName: session.displayName ?? owner.display_name,
+      role: 'admin',
+      owner: true,
+      expiresAt: new Date(session.exp * 1000).toISOString(),
+      csrf: session.csrf,
+      deviceChanged: false
+    } : null });
     response.headers.set('set-cookie', sessionCookie(token));
     return response;
   }
