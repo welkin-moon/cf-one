@@ -1,7 +1,7 @@
 export interface Env {
   DB: D1Database;
   CACHE: KVNamespace;
-  MEDIA: R2Bucket;
+  MEDIA?: R2Bucket;
   EMAIL?: EmailSender;
   APP_NAME: string;
   SESSION_SECRET: string;
