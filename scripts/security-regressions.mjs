@@ -56,6 +56,8 @@ assert.match(owner, /INSERT INTO users/);
 assert.match(owner, /ON CONFLICT\(id\) DO UPDATE/, 'owner login must repair its D1 identity');
 assert.match(owner, /__Host-cf_one_session=/);
 assert.match(owner, /\^\[A-Za-z0-9_-\]\{24\}\$/, 'owner challenge identifiers must have an exact format');
+assert.match(owner, /const OWNER_ITERATIONS = 100_000;/, 'owner PBKDF2 must stay within the Cloudflare Workers 100,000-iteration limit');
+assert.doesNotMatch(owner, /OWNER_ITERATIONS\s*=\s*(?:1[0-9]{5,}|[2-9][0-9]{5,})/, 'owner PBKDF2 must never exceed the Workers runtime limit');
 
 assert.match(mirror, /const MIRROR_ZONE = '20100823\.xyz'/);
 assert.match(mirror, /const MIRROR_SERVICE = 'cf-one-apex'/);
