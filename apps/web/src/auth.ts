@@ -5,8 +5,6 @@ import { constantTimeEqual } from './security';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const SESSION_COOKIE = '__Host-cf_one_session';
-const OWNER_ID = 'owner';
-const OWNER_EMAIL = 'admin@owner.local';
 
 export function assertSessionSecret(env: Env): void {
   if (!env.SESSION_SECRET || env.SESSION_SECRET.length < 32) {
@@ -142,23 +140,55 @@ export async function readSession(request: Request, env: Env): Promise<Session |
   }
 }
 
-export async function requireSession(request: Request, env: Env): Promise<Session> {
+interface AuthorizationRow {
+  role: 'member' | 'admin';
+  username: string | null;
+  display_name: string;
+  account_status: 'active' | 'disabled';
+  is_owner: number;
+}
+
+async function authorizeSession(session: Session, env: Env): Promise<Session | null> {
+  const row = await env.DB.prepare(`SELECT role, username, display_name, account_status, is_owner
+    FROM users WHERE id = ?1 AND lower(email) = lower(?2)`)
+    .bind(session.sub, session.email).first<AuthorizationRow>();
+  if (!row || row.account_status !== 'active') return null;
+  session.role = row.is_owner ? 'admin' : row.role;
+  session.owner = Boolean(row.is_owner);
+  session.username = row.username ?? undefined;
+  session.displayName = row.display_name;
+  return session;
+}
+
+export async function currentSession(request: Request, env: Env): Promise<Session | null> {
   const session = await readSession(request, env);
+  return session ? authorizeSession(session, env) : null;
+}
+
+export async function requireSession(request: Request, env: Env): Promise<Session> {
+  const session = await currentSession(request, env);
   if (!session) throw new HttpError(401, 'authentication required');
   if (session.deviceChanged && env.DEVICE_BINDING === 'strict') throw new HttpError(401, 'device changed; sign in again');
   return session;
 }
 
-export function isCurrentAdmin(session: Session, env: Env): boolean {
-  if (session.role !== 'admin') return false;
-  if (session.sub === OWNER_ID && session.email === OWNER_EMAIL) return true;
-  const currentAdmins = new Set((env.ADMIN_EMAILS || '').split(',').map(email => email.trim().toLowerCase()).filter(Boolean));
-  return currentAdmins.has(session.email.toLowerCase());
+export function isOwner(session: Session): boolean {
+  return Boolean(session.owner);
+}
+
+export function isCurrentAdmin(session: Session): boolean {
+  return session.role === 'admin' || Boolean(session.owner);
 }
 
 export async function requireAdmin(request: Request, env: Env): Promise<Session> {
   const session = await requireSession(request, env);
-  if (!isCurrentAdmin(session, env)) throw new HttpError(403, 'admin required');
+  if (!isCurrentAdmin(session)) throw new HttpError(403, 'admin required');
+  return session;
+}
+
+export async function requireOwner(request: Request, env: Env): Promise<Session> {
+  const session = await requireSession(request, env);
+  if (!isOwner(session)) throw new HttpError(403, 'owner required');
   return session;
 }
 
