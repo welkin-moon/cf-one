@@ -28,6 +28,9 @@ export interface Session {
   device: string;
   csrf: string;
   deviceChanged?: boolean;
+  owner?: boolean;
+  username?: string;
+  displayName?: string;
 }
 
 export interface MirrorTarget {
