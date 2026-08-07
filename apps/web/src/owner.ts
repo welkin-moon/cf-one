@@ -6,7 +6,9 @@ import { constantTimeEqual, rateLimit } from './security';
 const OWNER_ID = 'owner';
 const OWNER_EMAIL = 'admin@owner.local';
 const OWNER_USERNAME = 'admin';
-const OWNER_ITERATIONS = 310_000;
+// Cloudflare Workers WebCrypto rejects PBKDF2 iteration counts above 100,000.
+// Keep the browser challenge and Worker verifier on the same supported value.
+const OWNER_ITERATIONS = 100_000;
 const encoder = new TextEncoder();
 
 function base64url(bytes: Uint8Array): string {
