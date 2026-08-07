@@ -1,10 +1,6 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
-for (const name of ['SESSION_SECRET', 'INVITE_CODE', 'OWNER_PASSWORD']) {
-  if (!process.env[name]) throw new Error(`${name} must be configured as an encrypted Workers Build secret before deployment.`);
-}
-
 const { outputPath } = await import('./provision-cloudflare.mjs');
 const webDirectory = path.dirname(outputPath);
 
@@ -26,8 +22,12 @@ await run(['deploy', '--config', 'wrangler.generated.jsonc']);
 
 const runtimeSecrets = {};
 for (const name of ['SESSION_SECRET', 'INVITE_CODE', 'OWNER_PASSWORD']) {
-  runtimeSecrets[name] = process.env[name];
+  if (process.env[name]) runtimeSecrets[name] = process.env[name];
 }
 if (process.env.CF_RUNTIME_API_TOKEN) runtimeSecrets.CF_API_TOKEN = process.env.CF_RUNTIME_API_TOKEN;
-await run(['secret', 'bulk', '--config', 'wrangler.generated.jsonc'], `${JSON.stringify(runtimeSecrets)}\n`);
-console.log('cf-one-apex deployed to the two apex domains and received its runtime secrets.');
+if (Object.keys(runtimeSecrets).length) {
+  await run(['secret', 'bulk', '--config', 'wrangler.generated.jsonc'], `${JSON.stringify(runtimeSecrets)}\n`);
+  console.log('cf-one-apex deployed; build-provided runtime secrets were synchronized.');
+} else {
+  console.log('cf-one-apex deployed; existing runtime secrets were preserved by keep_vars.');
+}
