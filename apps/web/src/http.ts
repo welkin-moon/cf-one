@@ -12,9 +12,11 @@ const SECURITY_HEADERS: Record<string, string> = {
 export function withSecurityHeaders(response: Response): Response {
   const headers = new Headers(response.headers);
   const isMirror = headers.has('x-cf-one-mirror');
-  for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
-    if (isMirror && key === 'content-security-policy') continue;
-    headers.set(key, value);
+  if (isMirror) {
+    headers.set('strict-transport-security', 'max-age=31536000');
+    headers.set('x-content-type-options', 'nosniff');
+  } else {
+    for (const [key, value] of Object.entries(SECURITY_HEADERS)) headers.set(key, value);
   }
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }

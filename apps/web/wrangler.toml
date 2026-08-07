@@ -2,6 +2,7 @@ name = "cf-one-apex"
 main = "src/index.ts"
 compatibility_date = "2026-07-21"
 workers_dev = false
+keep_vars = true
 
 [[routes]]
 pattern = "lunarlab.uk"
@@ -20,19 +21,3 @@ migrations_dir = "migrations"
 [[kv_namespaces]]
 binding = "CACHE"
 id = "00000000000000000000000000000000"
-
-[[r2_buckets]]
-binding = "MEDIA"
-bucket_name = "cf-one-media"
-
-[vars]
-APP_NAME = "Lunar Lab"
-OWNER_USERNAME = "admin"
-ADMIN_EMAILS = "admin@owner.local"
-USER_ALLOWLIST = ""
-MAIL_RECIPIENTS = ""
-EMAIL_DESTINATIONS = ""
-MANAGED_ZONES = "lunarlab.uk,20100823.xyz"
-DEVICE_BINDING = "soft"
-MIRROR_TARGETS = "{}"
-SITE_CONFIG = "{}"

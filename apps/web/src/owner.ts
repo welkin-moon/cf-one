@@ -5,6 +5,7 @@ import { constantTimeEqual, rateLimit } from './security';
 
 const OWNER_ID = 'owner';
 const OWNER_EMAIL = 'admin@owner.local';
+const OWNER_USERNAME = 'admin';
 const OWNER_ITERATIONS = 310_000;
 const encoder = new TextEncoder();
 
@@ -29,7 +30,7 @@ async function ownerSalt(env: Env): Promise<string> {
 }
 
 async function ownerVerifier(env: Env, salt: string): Promise<string> {
-  if (!env.OWNER_PASSWORD) throw new HttpError(503, 'OWNER_PASSWORD is not configured as a Worker secret');
+  if (!env.OWNER_PASSWORD) throw new HttpError(503, 'OWNER_PASSWORD is not configured');
   const material = await crypto.subtle.importKey('raw', encoder.encode(env.OWNER_PASSWORD), 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits(
     { name: 'PBKDF2', hash: 'SHA-256', salt: buffer(fromBase64url(salt)), iterations: OWNER_ITERATIONS },
@@ -39,17 +40,11 @@ async function ownerVerifier(env: Env, salt: string): Promise<string> {
   return base64url(new Uint8Array(bits));
 }
 
-function ownerName(env: Env): string {
-  const value = (env.OWNER_USERNAME || 'admin').trim().toLowerCase();
-  if (!/^[a-z0-9_.-]{1,64}$/.test(value)) throw new HttpError(503, 'OWNER_USERNAME is invalid');
-  return value;
-}
-
 async function ensureOwnerUser(env: Env): Promise<void> {
-  await env.DB.prepare(`INSERT INTO users (id, email, display_name, role)
-    VALUES (?1, ?2, ?3, 'admin')
-    ON CONFLICT(id) DO UPDATE SET email = excluded.email, display_name = excluded.display_name, role = 'admin'`)
-    .bind(OWNER_ID, OWNER_EMAIL, ownerName(env)).run();
+  await env.DB.prepare(`INSERT INTO users (id, email, display_name, role, status)
+    VALUES (?1, ?2, ?3, 'admin', 'active')
+    ON CONFLICT(id) DO UPDATE SET email = excluded.email, display_name = excluded.display_name, role = 'admin', status = 'active'`)
+    .bind(OWNER_ID, OWNER_EMAIL, OWNER_USERNAME).run();
 }
 
 export async function ownerAuthRoutes(request: Request, env: Env, path: string): Promise<Response | null> {
@@ -57,7 +52,7 @@ export async function ownerAuthRoutes(request: Request, env: Env, path: string):
     assertSessionSecret(env);
     const body = await readJson<{ email?: string }>(request);
     const username = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-    if (username !== ownerName(env)) return null;
+    if (username !== OWNER_USERNAME) return null;
     await rateLimit(request, env, 'owner-challenge', 12, 15 * 60);
     const salt = await ownerSalt(env);
     const challenge = base64url(crypto.getRandomValues(new Uint8Array(32)));
@@ -70,7 +65,7 @@ export async function ownerAuthRoutes(request: Request, env: Env, path: string):
     assertSessionSecret(env);
     const body = await readJson<{ email?: string; challengeId?: string; proof?: string }>(request);
     const username = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-    if (username !== ownerName(env)) return null;
+    if (username !== OWNER_USERNAME) return null;
     await rateLimit(request, env, 'owner-login', 8, 15 * 60);
     const challengeId = typeof body.challengeId === 'string' ? body.challengeId : '';
     const proof = typeof body.proof === 'string' ? body.proof : '';
@@ -101,8 +96,9 @@ export async function ownerAuthRoutes(request: Request, env: Env, path: string):
       ok: true,
       session: session ? {
         id: OWNER_ID,
-        email: ownerName(env),
+        email: OWNER_USERNAME,
         role: 'admin',
+        owner: true,
         expiresAt: new Date(session.exp * 1000).toISOString(),
         csrf: session.csrf,
         deviceChanged: false

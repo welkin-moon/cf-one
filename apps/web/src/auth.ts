@@ -142,23 +142,40 @@ export async function readSession(request: Request, env: Env): Promise<Session |
   }
 }
 
-export async function requireSession(request: Request, env: Env): Promise<Session> {
+export function isOwner(session: Session): boolean {
+  return session.sub === OWNER_ID && session.email === OWNER_EMAIL;
+}
+
+export async function currentSession(request: Request, env: Env): Promise<Session | null> {
   const session = await readSession(request, env);
+  if (!session) return null;
+  if (session.deviceChanged && env.DEVICE_BINDING === 'strict') return null;
+  if (isOwner(session)) return { ...session, role: 'admin' };
+  const user = await env.DB.prepare(`SELECT email, role, status FROM users WHERE id = ?1`)
+    .bind(session.sub).first<{ email: string; role: 'member' | 'admin'; status: 'active' | 'disabled' }>();
+  if (!user || user.status !== 'active' || user.email.toLowerCase() !== session.email.toLowerCase()) return null;
+  return { ...session, email: user.email.toLowerCase(), role: user.role };
+}
+
+export async function requireSession(request: Request, env: Env): Promise<Session> {
+  const session = await currentSession(request, env);
   if (!session) throw new HttpError(401, 'authentication required');
-  if (session.deviceChanged && env.DEVICE_BINDING === 'strict') throw new HttpError(401, 'device changed; sign in again');
   return session;
 }
 
-export function isCurrentAdmin(session: Session, env: Env): boolean {
-  if (session.role !== 'admin') return false;
-  if (session.sub === OWNER_ID && session.email === OWNER_EMAIL) return true;
-  const currentAdmins = new Set((env.ADMIN_EMAILS || '').split(',').map(email => email.trim().toLowerCase()).filter(Boolean));
-  return currentAdmins.has(session.email.toLowerCase());
+export function isCurrentAdmin(session: Session, _env?: Env): boolean {
+  return session.role === 'admin';
 }
 
 export async function requireAdmin(request: Request, env: Env): Promise<Session> {
   const session = await requireSession(request, env);
-  if (!isCurrentAdmin(session, env)) throw new HttpError(403, 'admin required');
+  if (!isCurrentAdmin(session)) throw new HttpError(403, 'admin required');
+  return session;
+}
+
+export async function requireOwner(request: Request, env: Env): Promise<Session> {
+  const session = await requireSession(request, env);
+  if (!isOwner(session)) throw new HttpError(403, 'owner required');
   return session;
 }
 
