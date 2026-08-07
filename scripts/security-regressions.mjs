@@ -6,46 +6,70 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = relative => readFile(path.join(root, relative), 'utf8');
 
-const [wrangler, provision, index, auth, owner, deploy] = await Promise.all([
+const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoutes] = await Promise.all([
   read('apps/web/wrangler.toml'),
   read('scripts/provision-cloudflare.mjs'),
   read('apps/web/src/index.ts'),
   read('apps/web/src/auth.ts'),
   read('apps/web/src/owner.ts'),
-  read('scripts/deploy-cloudflare.mjs')
+  read('scripts/deploy-cloudflare.mjs'),
+  read('apps/web/src/mirror.ts'),
+  read('apps/web/src/admin-routes.ts'),
+  read('apps/web/src/auth-routes.ts')
 ]);
 
 assert.match(wrangler, /workers_dev\s*=\s*false/, 'workers.dev must stay disabled');
-assert.equal((wrangler.match(/custom_domain\s*=\s*true/g) ?? []).length, 2, 'exactly two custom domains are allowed');
+assert.match(wrangler, /keep_vars\s*=\s*true/, 'dashboard variables must survive deploys');
+assert.equal((wrangler.match(/custom_domain\s*=\s*true/g) ?? []).length, 2, 'exactly two static custom domains are allowed');
 assert.match(wrangler, /pattern\s*=\s*"lunarlab\.uk"/);
 assert.match(wrangler, /pattern\s*=\s*"20100823\.xyz"/);
 assert.doesNotMatch(wrangler, /pattern\s*=\s*"[^"\n]*\*/, 'wildcard routes are forbidden');
+assert.doesNotMatch(wrangler, /^\[vars\]/m, 'runtime variables must not be committed to wrangler.toml');
+assert.doesNotMatch(wrangler, /CF_API_TOKEN|OWNER_PASSWORD|SESSION_SECRET|INVITE_CODE/, 'credentials must not appear in repository Wrangler config');
 
 assert.match(provision, /workers_dev:\s*false/);
+assert.match(provision, /keep_vars:\s*true/);
 assert.match(provision, /allowedDomains = new Set\(\['lunarlab\.uk', '20100823\.xyz'\]\)/);
-assert.match(provision, /new Set\(domains\)\.size !== 2/, 'duplicate domain entries must be rejected');
-assert.match(provision, /MANAGED_ZONES:\s*domains\.join\(','\)/, 'admin zone scope must follow the two deployment domains');
-assert.match(provision, /OWNER_USERNAME:\s*'admin'/, 'the highest-privilege username must stay fixed as admin');
+assert.match(provision, /new Set\(domains\)\.size !== 2/, 'duplicate deployment domains must be rejected');
+assert.doesNotMatch(provision, /\bvars\s*:/, 'provisioning must not overwrite dashboard runtime variables');
+assert.doesNotMatch(provision, /OWNER_PASSWORD|SESSION_SECRET|INVITE_CODE|CF_RUNTIME_API_TOKEN/, 'provisioning must never handle runtime credentials');
 
 assert.match(index, /const ALLOWED_HOSTS = new Set\(\['lunarlab\.uk', '20100823\.xyz'\]\)/);
 assert.match(index, /request\.clone\(\) as unknown as Request/, 'owner probing must clone and explicitly narrow the request type');
 assert.match(index, /ownerAuthRoutes\(ownerRequest, env, path\)/, 'owner probing must not consume the member request body');
-assert.doesNotMatch(index, /endsWith\(['"]\.20100823\.xyz/, 'subdomains must never be accepted by the homepage Worker');
+assert.match(index, /isMirrorHostname\(host\)/, 'mirror hosts must go through the dedicated D1-backed proxy path');
+assert.doesNotMatch(index, /endsWith\(['"]\.20100823\.xyz/, 'homepage routing must never broadly accept arbitrary subdomains');
 
 assert.match(auth, /const SESSION_COOKIE = '__Host-cf_one_session'/);
 assert.match(auth, /SameSite=Strict/);
-assert.match(auth, /export async function readSession[\s\S]*?assertSessionSecret\(env\)/, 'session verification must fail closed without a strong secret');
-assert.match(auth, /session\.sub === OWNER_ID && session\.email === OWNER_EMAIL/, 'owner authorization must not depend on an editable email allowlist');
+assert.match(auth, /export async function readSession[\s\S]*?assertSessionSecret\(env\)/, 'session verification must fail closed without a strong signing value');
+assert.match(auth, /SELECT email, role, status FROM users WHERE id = \?1/, 'protected requests must re-check current D1 account state');
+assert.match(auth, /user\.status !== 'active'/, 'disabled users must lose access immediately');
+assert.match(auth, /session\.sub === OWNER_ID && session\.email === OWNER_EMAIL/, 'owner identity must be fixed independently of editable user data');
+assert.match(auth, /export async function requireOwner/, 'infrastructure actions need a separate owner gate');
+
+assert.match(authRoutes, /VALUES \(\?1, \?2, \?3, 'member', 'active'\)/, 'new member registration must never self-promote');
+assert.doesNotMatch(authRoutes, /ADMIN_EMAILS|USER_ALLOWLIST/, 'member roles must come from D1 rather than environment allowlists');
+assert.match(authRoutes, /__Host-cf_one_session=\$\{token\}/, 'synthetic session checks must use the actual host-only cookie name');
 
 assert.match(owner, /INSERT INTO users/);
 assert.match(owner, /ON CONFLICT\(id\) DO UPDATE/, 'owner login must repair its D1 identity');
 assert.match(owner, /__Host-cf_one_session=/);
 assert.match(owner, /\^\[A-Za-z0-9_-\]\{24\}\$/, 'owner challenge identifiers must have an exact format');
 
-for (const secret of ['SESSION_SECRET', 'INVITE_CODE', 'OWNER_PASSWORD']) {
-  assert.match(deploy, new RegExp(`['"]${secret}['"]`), `${secret} must be required and uploaded`);
-}
-assert.doesNotMatch(deploy, /console\.log\([^)]*process\.env/i, 'deployment logs must not interpolate environment secrets');
-assert.doesNotMatch(deploy, /console\.log\([^)]*JSON\.stringify\(runtimeSecrets\)/i, 'deployment logs must not serialize runtime secrets');
+assert.match(mirror, /const MIRROR_ZONE = '20100823\.xyz'/);
+assert.match(mirror, /const MIRROR_SERVICE = 'cf-one-apex'/);
+assert.match(mirror, /\^m\[1-9\]\[0-9\]\*\\\.20100823\\\.xyz\$/i, 'only numbered mN mirror hostnames may enter the mirror host path');
+assert.match(mirror, /workers\/domains/, 'mirror provisioning must use exact Worker Custom Domains');
+assert.match(mirror, /dns_records\?name=/, 'mirror allocation must refuse existing DNS names instead of overwriting them');
+assert.doesNotMatch(mirror, /\*\.20100823\.xyz|pattern.*\*/, 'mirror provisioning must never create a wildcard route');
+
+assert.match(admin, /ownerOnly\(session\)/, 'infrastructure and role management must enforce the owner boundary');
+assert.match(admin, /cloudflareApiConfigured:\s*Boolean\(env\.CF_API_TOKEN\)/, 'status may expose only whether the token is configured');
+assert.doesNotMatch(admin, /accountId:\s*env\.CF_ACCOUNT_ID|slice\(0,\s*6\).*CF_ACCOUNT_ID/, 'status must not return even a truncated configured account value');
+assert.doesNotMatch(admin, /json\([^\n]*CF_API_TOKEN|json\([^\n]*OWNER_PASSWORD|json\([^\n]*SESSION_SECRET|json\([^\n]*INVITE_CODE/, 'credential values must never be serialized into API responses');
+
+assert.doesNotMatch(deploy, /secret.*bulk|runtimeSecrets|SESSION_SECRET|OWNER_PASSWORD|INVITE_CODE|CF_RUNTIME_API_TOKEN/i, 'deploy must not read or rewrite dashboard credentials');
+assert.doesNotMatch(deploy, /console\.log\([^)]*process\.env/i, 'deployment logs must not interpolate environment credentials');
 
 console.log('security regression checks passed');
