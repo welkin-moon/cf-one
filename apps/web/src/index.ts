@@ -6,9 +6,11 @@ import { authRoutes, chatRoutes, socialRoutes, toolsRoutes } from './features';
 import { HttpError, html, json, withSecurityHeaders } from './http';
 import { mailRoutes, receiveEmail } from './mail';
 import { mirrorRoute } from './mirror';
+import { ownerAuthRoutes } from './owner';
 import { requireSameOrigin } from './security';
 import { APP_CSS, appPage } from './ui';
 
+const ALLOWED_HOSTS = new Set(['lunarlab.uk', '20100823.xyz']);
 const PAGE_FEATURES: Record<string, Feature> = {
   chat: 'chat', social: 'social', tools: 'tools', mail: 'mail', mirror: 'mirror', store: 'store', admin: 'admin'
 };
@@ -24,15 +26,26 @@ function icon(accent: string): Response {
 
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
+  const host = url.hostname.toLowerCase();
+  if (!ALLOWED_HOSTS.has(host)) {
+    throw new HttpError(421, 'cf-one only serves the two apex domains; subdomains must keep their existing origin or Tunnel route');
+  }
   const path = url.pathname.replace(/\/{2,}/g, '/');
   const profile = siteProfile(request, env);
   requireSameOrigin(request);
 
   if (path === '/assets/app.css' && request.method === 'GET') return asset(APP_CSS, 'text/css; charset=utf-8');
-  if (path === '/assets/app.js' && request.method === 'GET') return asset(APP_JS, 'text/javascript; charset=utf-8');
+  if (path === '/assets/app.js' && request.method === 'GET') {
+    const ownerAware = APP_JS
+      .replace('field("邮箱", "email", "email", "you@example.com", true)', 'field("用户名 / 邮箱", "email", "text", "admin 或 you@example.com", true)')
+      .replace('panel("成员登录", form)', 'panel("站主 / 成员登录", form)')
+      .replace('if (String(values.password || "").length < 10 || String(values.password || "").length > 256)', 'if ((String(values.email || "").trim().toLowerCase() !== "admin" && String(values.password || "").length < 10) || String(values.password || "").length > 256)')
+      .replace('密码必须为 10–256 个字符', '成员密码必须为 10–256 个字符');
+    return asset(ownerAware, 'text/javascript; charset=utf-8');
+  }
   if (path === '/icon.svg' && request.method === 'GET') return icon(profile.accent);
   if (path === '/' && request.method === 'GET') return html(appPage(profile, path));
-  if (path === '/healthz' && request.method === 'GET') return json({ ok: true, service: 'cf-one', host: profile.host, features: profile.features, now: new Date().toISOString() });
+  if (path === '/healthz' && request.method === 'GET') return json({ ok: true, service: 'cf-one-apex', host: profile.host, features: profile.features, now: new Date().toISOString() });
   if (path === '/manifest.webmanifest' && request.method === 'GET') {
     return json({
       id: '/', name: profile.name, short_name: profile.name.slice(0, 12), description: profile.tagline,
@@ -41,7 +54,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     }, 200, { 'content-type': 'application/manifest+json; charset=utf-8', 'cache-control': 'public, max-age=300' });
   }
   if (path === '/sw.js' && request.method === 'GET') {
-    return new Response(`const CACHE='cf-one-v1';const SHELL=['/','/assets/app.css','/assets/app.js','/icon.svg'];self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));self.addEventListener('fetch',event=>{const url=new URL(event.request.url);if(event.request.method!=='GET'||url.origin!==location.origin||url.pathname.startsWith('/api/')||url.pathname.startsWith('/mirror/'))return;event.respondWith(fetch(event.request).then(response=>{const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));return response}).catch(()=>caches.match(event.request).then(hit=>hit||caches.match('/'))))});`, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache', 'service-worker-allowed': '/' } });
+    return new Response(`const CACHE='cf-one-v2';const SHELL=['/','/assets/app.css','/assets/app.js','/icon.svg'];self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));self.addEventListener('fetch',event=>{const url=new URL(event.request.url);if(event.request.method!=='GET'||url.origin!==location.origin||url.pathname.startsWith('/api/')||url.pathname.startsWith('/mirror/'))return;event.respondWith(fetch(event.request).then(response=>{if(response.ok){const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));}return response}).catch(()=>caches.match(event.request).then(hit=>hit||caches.match('/'))))});`, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache', 'service-worker-allowed': '/' } });
   }
   if (path.startsWith('/app/') && request.method === 'GET') {
     const page = path.split('/').filter(Boolean).pop() ?? '';
@@ -54,7 +67,12 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
 
   const handlers: Array<() => Promise<Response | null>> = [
-    () => authRoutes(request, env, path),
+    async () => {
+      if (!path.startsWith('/api/auth/')) return null;
+      const ownerRequest = request.clone() as unknown as Request;
+      const owner = await ownerAuthRoutes(ownerRequest, env, path);
+      return owner ?? authRoutes(request, env, path);
+    },
     async () => { if (!path.startsWith('/api/tools/')) return null; requireFeature(profile, 'tools'); return toolsRoutes(request, path); },
     async () => { if (!path.startsWith('/api/chat/')) return null; requireFeature(profile, 'chat'); return chatRoutes(request, env, path); },
     async () => { if (!path.startsWith('/api/social/')) return null; requireFeature(profile, 'social'); return socialRoutes(request, env, path); },

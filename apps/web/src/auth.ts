@@ -4,6 +4,9 @@ import { constantTimeEqual } from './security';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const SESSION_COOKIE = '__Host-cf_one_session';
+const OWNER_ID = 'owner';
+const OWNER_EMAIL = 'admin@owner.local';
 
 export function assertSessionSecret(env: Env): void {
   if (!env.SESSION_SECRET || env.SESSION_SECRET.length < 32) {
@@ -18,6 +21,7 @@ function base64url(bytes: Uint8Array): string {
 }
 
 function fromBase64url(value: string): Uint8Array {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('invalid base64url');
   const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - value.length % 4) % 4);
   return Uint8Array.from(atob(padded), c => c.charCodeAt(0));
 }
@@ -37,6 +41,7 @@ function cookie(request: Request, name: string): string | null {
 }
 
 export async function deviceSignal(request: Request, env: Env): Promise<string> {
+  assertSessionSecret(env);
   const parts = [
     request.headers.get('user-agent') ?? '',
     request.headers.get('sec-ch-ua') ?? '',
@@ -108,18 +113,30 @@ export async function issueSession(user: SessionUser, env: Env, request: Request
   return `${encoded}.${await hmac(env.SESSION_SECRET, encoded)}`;
 }
 
+function validSession(value: unknown): value is Session {
+  if (!value || typeof value !== 'object') return false;
+  const session = value as Partial<Session>;
+  return typeof session.sub === 'string' && session.sub.length >= 1 && session.sub.length <= 128 &&
+    typeof session.email === 'string' && session.email.length >= 3 && session.email.length <= 254 &&
+    (session.role === 'member' || session.role === 'admin') &&
+    typeof session.exp === 'number' && Number.isSafeInteger(session.exp) &&
+    typeof session.device === 'string' && /^[A-Za-z0-9_-]{22}$/.test(session.device) &&
+    typeof session.csrf === 'string' && /^[A-Za-z0-9_-]{32}$/.test(session.csrf);
+}
+
 export async function readSession(request: Request, env: Env): Promise<Session | null> {
-  const token = cookie(request, 'cf_one_session');
-  if (!token) return null;
-  const [encoded, signature] = token.split('.');
-  if (!encoded || !signature) return null;
+  assertSessionSecret(env);
+  const token = cookie(request, SESSION_COOKIE);
+  if (!token || token.length > 4096) return null;
+  const [encoded, signature, extra] = token.split('.');
+  if (!encoded || !signature || extra || !/^[A-Za-z0-9_-]{43}$/.test(signature)) return null;
   const expected = await hmac(env.SESSION_SECRET, encoded);
   if (!constantTimeEqual(signature, expected)) return null;
   try {
-    const session = JSON.parse(decoder.decode(fromBase64url(encoded))) as Session;
-    if (session.exp < Math.floor(Date.now() / 1000) || !session.csrf || !session.sub) return null;
-    session.deviceChanged = !constantTimeEqual(session.device, await deviceSignal(request, env));
-    return session;
+    const parsed: unknown = JSON.parse(decoder.decode(fromBase64url(encoded)));
+    if (!validSession(parsed) || parsed.exp <= Math.floor(Date.now() / 1000)) return null;
+    parsed.deviceChanged = !constantTimeEqual(parsed.device, await deviceSignal(request, env));
+    return parsed;
   } catch {
     return null;
   }
@@ -133,8 +150,10 @@ export async function requireSession(request: Request, env: Env): Promise<Sessio
 }
 
 export function isCurrentAdmin(session: Session, env: Env): boolean {
+  if (session.role !== 'admin') return false;
+  if (session.sub === OWNER_ID && session.email === OWNER_EMAIL) return true;
   const currentAdmins = new Set((env.ADMIN_EMAILS || '').split(',').map(email => email.trim().toLowerCase()).filter(Boolean));
-  return session.role === 'admin' && currentAdmins.has(session.email.toLowerCase());
+  return currentAdmins.has(session.email.toLowerCase());
 }
 
 export async function requireAdmin(request: Request, env: Env): Promise<Session> {
@@ -144,9 +163,9 @@ export async function requireAdmin(request: Request, env: Env): Promise<Session>
 }
 
 export function sessionCookie(token: string): string {
-  return `cf_one_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=1209600; Priority=High`;
+  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=1209600; Priority=High`;
 }
 
 export function clearSessionCookie(): string {
-  return 'cf_one_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0';
+  return `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`;
 }

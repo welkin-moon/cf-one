@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
-for (const name of ['SESSION_SECRET', 'INVITE_CODE']) {
+for (const name of ['SESSION_SECRET', 'INVITE_CODE', 'OWNER_PASSWORD']) {
   if (!process.env[name]) throw new Error(`${name} must be configured as an encrypted Workers Build secret before deployment.`);
 }
 
@@ -25,9 +25,9 @@ await run(['d1', 'migrations', 'apply', process.env.CF_ONE_D1_NAME?.trim() || 'c
 await run(['deploy', '--config', 'wrangler.generated.jsonc']);
 
 const runtimeSecrets = {};
-for (const name of ['SESSION_SECRET', 'INVITE_CODE']) {
+for (const name of ['SESSION_SECRET', 'INVITE_CODE', 'OWNER_PASSWORD']) {
   runtimeSecrets[name] = process.env[name];
 }
 if (process.env.CF_RUNTIME_API_TOKEN) runtimeSecrets.CF_API_TOKEN = process.env.CF_RUNTIME_API_TOKEN;
 await run(['secret', 'bulk', '--config', 'wrangler.generated.jsonc'], `${JSON.stringify(runtimeSecrets)}\n`);
-console.log('cf-one deployed, migrated, and received its runtime secrets.');
+console.log('cf-one-apex deployed to the two apex domains and received its runtime secrets.');

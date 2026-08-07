@@ -55,23 +55,27 @@ async function ensureR2(name) {
   return created?.name ?? name;
 }
 
-const workerName = process.env.CF_ONE_WORKER_NAME?.trim() || 'cf-one';
+const workerName = process.env.CF_ONE_WORKER_NAME?.trim() || 'cf-one-apex';
 const databaseName = process.env.CF_ONE_D1_NAME?.trim() || 'cf-one';
 const kvTitle = process.env.CF_ONE_KV_NAME?.trim() || 'cf-one-cache';
 const bucketName = process.env.CF_ONE_R2_NAME?.trim() || 'cf-one-media';
 const domains = (process.env.CF_ONE_DOMAINS || 'lunarlab.uk,20100823.xyz').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
+const allowedDomains = new Set(['lunarlab.uk', '20100823.xyz']);
 
-if (!domains.length || domains.some(domain => !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(domain))) {
-  throw new Error('CF_ONE_DOMAINS must be a comma-separated list of valid hostnames.');
+if (domains.length !== 2 || new Set(domains).size !== 2 || domains.some(domain => !allowedDomains.has(domain))) {
+  throw new Error('CF_ONE_DOMAINS must contain exactly lunarlab.uk and 20100823.xyz. Subdomains are deliberately forbidden.');
 }
+if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(workerName)) throw new Error('CF_ONE_WORKER_NAME is invalid.');
 
 const [databaseId, kvId, r2Bucket] = await Promise.all([ensureD1(databaseName), ensureKv(kvTitle), ensureR2(bucketName)]);
+const configuredAdmins = (process.env.CF_ONE_ADMIN_EMAILS || '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
+const adminEmails = [...new Set(['admin@owner.local', ...configuredAdmins])].join(',');
 const config = {
   $schema: '../../node_modules/wrangler/config-schema.json',
   name: workerName,
   main: 'src/index.ts',
   compatibility_date: '2026-07-21',
-  workers_dev: true,
+  workers_dev: false,
   keep_vars: true,
   routes: domains.map(pattern => ({ pattern, custom_domain: true })),
   d1_databases: [{ binding: 'DB', database_name: databaseName, database_id: databaseId, migrations_dir: 'migrations' }],
@@ -79,11 +83,12 @@ const config = {
   r2_buckets: [{ binding: 'MEDIA', bucket_name: r2Bucket }],
   vars: {
     APP_NAME: process.env.CF_ONE_APP_NAME || 'Lunar Lab',
-    ADMIN_EMAILS: process.env.CF_ONE_ADMIN_EMAILS || '',
+    OWNER_USERNAME: 'admin',
+    ADMIN_EMAILS: adminEmails,
     USER_ALLOWLIST: process.env.CF_ONE_USER_ALLOWLIST || '',
     MAIL_RECIPIENTS: process.env.CF_ONE_MAIL_RECIPIENTS || '',
     EMAIL_DESTINATIONS: process.env.CF_ONE_EMAIL_DESTINATIONS || '',
-    MANAGED_ZONES: process.env.CF_ONE_MANAGED_ZONES || domains.join(','),
+    MANAGED_ZONES: domains.join(','),
     DEVICE_BINDING: process.env.CF_ONE_DEVICE_BINDING === 'strict' ? 'strict' : 'soft',
     MIRROR_TARGETS: process.env.CF_ONE_MIRROR_TARGETS || '{}',
     SITE_CONFIG: process.env.CF_ONE_SITE_CONFIG || '{}',
@@ -98,6 +103,6 @@ if (process.env.CF_ONE_ENABLE_EMAIL_SEND === '1') {
 }
 
 await writeFile(outputPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
-console.log(`Prepared ${path.relative(root, outputPath)} with D1 ${databaseId}, KV ${kvId}, and R2 ${r2Bucket}.`);
+console.log(`Prepared ${path.relative(root, outputPath)} for apex-only Worker ${workerName}; D1 ${databaseId}, KV ${kvId}, R2 ${r2Bucket}.`);
 
 export { outputPath };
