@@ -11,8 +11,8 @@ interface IncomingEmail {
   setReject(reason: string): void;
 }
 
-function csv(value: string): Set<string> {
-  return new Set(value.split(',').map(item => item.trim().toLowerCase()).filter(Boolean));
+function csv(value?: string): Set<string> {
+  return new Set((value || '').split(',').map(item => item.trim().toLowerCase()).filter(Boolean));
 }
 
 function validEmail(value: string): boolean {
@@ -28,13 +28,17 @@ function canReadMail(session: Session, env: Env, recipient: string): boolean {
 }
 
 export async function receiveEmail(message: IncomingEmail, env: Env): Promise<void> {
-  if (!env.MEDIA) {
-    message.setReject('Mail archive storage is not configured');
+  const accepted = csv(env.MAIL_RECIPIENTS);
+  if (!accepted.size) {
+    message.setReject('Mail receiving is not configured');
     return;
   }
-  const accepted = csv(env.MAIL_RECIPIENTS);
-  if (accepted.size && !accepted.has(message.to.toLowerCase())) {
+  if (!accepted.has(message.to.toLowerCase())) {
     message.setReject('Unknown recipient');
+    return;
+  }
+  if (!env.MEDIA) {
+    message.setReject('Mail storage is not configured');
     return;
   }
   if (message.rawSize && message.rawSize > 25 * 1024 * 1024) {
@@ -44,8 +48,13 @@ export async function receiveEmail(message: IncomingEmail, env: Env): Promise<vo
   const id = crypto.randomUUID();
   const key = `mail/raw/${new Date().toISOString().slice(0, 10)}/${id}.eml`;
   await env.MEDIA.put(key, message.raw, { httpMetadata: { contentType: 'message/rfc822' } });
-  await env.DB.prepare('INSERT INTO mail_messages (id, sender, recipient, raw_object_key) VALUES (?1, ?2, ?3, ?4)')
-    .bind(id, message.from, message.to, key).run();
+  try {
+    await env.DB.prepare('INSERT INTO mail_messages (id, sender, recipient, raw_object_key) VALUES (?1, ?2, ?3, ?4)')
+      .bind(id, message.from, message.to, key).run();
+  } catch (error) {
+    await env.MEDIA.delete(key).catch(() => {});
+    throw error;
+  }
 }
 
 export async function mailRoutes(request: Request, env: Env, path: string): Promise<Response | null> {
@@ -59,9 +68,9 @@ export async function mailRoutes(request: Request, env: Env, path: string): Prom
     return json({ messages: result.results });
   }
 
-  const raw = path.match(/^\/api\/mail\/messages\/([^/]+)\/raw$/);
+  const raw = path.match(/^\/api\/mail\/messages\/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/raw$/i);
   if (raw && request.method === 'GET') {
-    if (!env.MEDIA) throw new HttpError(503, 'Mail archive storage is not configured');
+    if (!env.MEDIA) throw new HttpError(503, 'mail storage is not configured');
     const row = await env.DB.prepare('SELECT recipient, raw_object_key FROM mail_messages WHERE id = ?1').bind(raw[1]!).first<{ recipient: string; raw_object_key: string }>();
     if (!row) throw new HttpError(404, 'message not found');
     if (!canReadMail(session, env, row.recipient)) throw new HttpError(403, 'not allowed to read this message');
@@ -91,7 +100,7 @@ export async function mailRoutes(request: Request, env: Env, path: string): Prom
     const destinations = csv(env.EMAIL_DESTINATIONS);
     if (!validEmail(from) || !domains.has(from.split('@')[1] ?? '')) throw new HttpError(400, 'sender must use a managed domain');
     if (!validEmail(to)) throw new HttpError(400, 'valid recipient required');
-    if (!destinations.has(to)) throw new HttpError(403, 'recipient is not in the verified EMAIL_DESTINATIONS allowlist');
+    if (!destinations.size || !destinations.has(to)) throw new HttpError(403, 'recipient is not in the verified destination allowlist');
     if (!subject || subject.length > 200 || !messageText || messageText.length > 100_000) throw new HttpError(400, 'invalid subject or message body');
     if (replyTo && !validEmail(replyTo)) throw new HttpError(400, 'invalid reply-to address');
     await env.EMAIL.send({
