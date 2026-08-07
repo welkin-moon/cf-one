@@ -28,6 +28,10 @@ function canReadMail(session: Session, env: Env, recipient: string): boolean {
 }
 
 export async function receiveEmail(message: IncomingEmail, env: Env): Promise<void> {
+  if (!env.MEDIA) {
+    message.setReject('Mail archive storage is not configured');
+    return;
+  }
   const accepted = csv(env.MAIL_RECIPIENTS);
   if (accepted.size && !accepted.has(message.to.toLowerCase())) {
     message.setReject('Unknown recipient');
@@ -57,6 +61,7 @@ export async function mailRoutes(request: Request, env: Env, path: string): Prom
 
   const raw = path.match(/^\/api\/mail\/messages\/([^/]+)\/raw$/);
   if (raw && request.method === 'GET') {
+    if (!env.MEDIA) throw new HttpError(503, 'Mail archive storage is not configured');
     const row = await env.DB.prepare('SELECT recipient, raw_object_key FROM mail_messages WHERE id = ?1').bind(raw[1]!).first<{ recipient: string; raw_object_key: string }>();
     if (!row) throw new HttpError(404, 'message not found');
     if (!canReadMail(session, env, row.recipient)) throw new HttpError(403, 'not allowed to read this message');
