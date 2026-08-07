@@ -47,12 +47,18 @@ async function ensureKv(title) {
 }
 
 async function ensureR2(name) {
-  const existing = await api(`/accounts/${accountId}/r2/buckets`);
-  const buckets = Array.isArray(existing) ? existing : existing?.buckets ?? [];
-  const found = buckets.find(bucket => bucket.name === name);
-  if (found) return found.name;
-  const created = await api(`/accounts/${accountId}/r2/buckets`, { method: 'POST', body: JSON.stringify({ name }) });
-  return created?.name ?? name;
+  try {
+    const existing = await api(`/accounts/${accountId}/r2/buckets`);
+    const buckets = Array.isArray(existing) ? existing : existing?.buckets ?? [];
+    const found = buckets.find(bucket => bucket.name === name);
+    if (found) return found.name;
+    const created = await api(`/accounts/${accountId}/r2/buckets`, { method: 'POST', body: JSON.stringify({ name }) });
+    return created?.name ?? name;
+  } catch (error) {
+    const message = String(error);
+    if (message.includes('Please enable R2')) return null;
+    throw error;
+  }
 }
 
 const workerName = process.env.CF_ONE_WORKER_NAME?.trim() || 'cf-one-apex';
@@ -80,7 +86,7 @@ const config = {
   routes: domains.map(pattern => ({ pattern, custom_domain: true })),
   d1_databases: [{ binding: 'DB', database_name: databaseName, database_id: databaseId, migrations_dir: 'migrations' }],
   kv_namespaces: [{ binding: 'CACHE', id: kvId }],
-  r2_buckets: [{ binding: 'MEDIA', bucket_name: r2Bucket }],
+  ...(r2Bucket ? { r2_buckets: [{ binding: 'MEDIA', bucket_name: r2Bucket }] } : {}),
   vars: {
     APP_NAME: process.env.CF_ONE_APP_NAME || 'Lunar Lab',
     OWNER_USERNAME: 'admin',
@@ -103,6 +109,6 @@ if (process.env.CF_ONE_ENABLE_EMAIL_SEND === '1') {
 }
 
 await writeFile(outputPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
-console.log(`Prepared ${path.relative(root, outputPath)} for apex-only Worker ${workerName}; D1 ${databaseId}, KV ${kvId}, R2 ${r2Bucket}.`);
+console.log(`Prepared ${path.relative(root, outputPath)} for apex-only Worker ${workerName}; D1 ${databaseId}, KV ${kvId}, R2 ${r2Bucket ?? 'disabled'}.`);
 
 export { outputPath };
