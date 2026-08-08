@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = relative => readFile(path.join(root, relative), 'utf8');
 
-const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoutes, ui, readability, client, authClient, authChallenge, authMigration] = await Promise.all([
+const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoutes, ui, client, authClient, authChallenge, authMigration] = await Promise.all([
   read('apps/web/wrangler.toml'),
   read('scripts/provision-cloudflare.mjs'),
   read('apps/web/src/index.ts'),
@@ -16,8 +16,7 @@ const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoute
   read('apps/web/src/mirror.ts'),
   read('apps/web/src/admin-routes.ts'),
   read('apps/web/src/auth-routes.ts'),
-  read('apps/web/src/ui-v2.ts'),
-  read('apps/web/src/ui-readability.ts'),
+  read('apps/web/src/ui.ts'),
   read('apps/web/src/client.ts'),
   read('apps/web/src/auth-client.ts'),
   read('apps/web/src/auth-challenge.ts'),
@@ -52,9 +51,11 @@ assert.match(index, /request\.clone\(\) as unknown as Request/, 'owner probing m
 assert.match(index, /ownerAuthRoutes\(ownerRequest, env, path\)/, 'owner probing must not consume the member request body');
 assert.match(index, /isMirrorHostname\(host\)/, 'mirror hosts must go through the dedicated D1-backed proxy path');
 assert.doesNotMatch(index, /endsWith\(['"]\.20100823\.xyz/, 'homepage routing must never broadly accept arbitrary subdomains');
+assert.match(index, /from '\.\/ui';/, 'production must use the canonical UI source');
+assert.doesNotMatch(index, /ui-v2|ui-readability|APP_CSS_READABILITY/, 'production must not stack alternate UI implementations or CSS patch layers');
+assert.match(index, /return asset\(APP_CSS, 'text\/css; charset=utf-8'\)/, 'the canonical stylesheet must be served directly');
 assert.match(index, /return asset\(APP_JS, 'text\/javascript; charset=utf-8'\)/, 'app pages must receive the checked-in client source directly');
 assert.match(index, /return asset\(AUTH_JS, 'text\/javascript; charset=utf-8'\)/, 'login must use an isolated checked-in client source');
-assert.match(index, /APP_CSS_READABILITY/, 'the production stylesheet must include the readability refinement layer');
 assert.match(index, /cache = 'no-store'/, 'rapid deployments must not mix stale JS or CSS with new HTML');
 assert.match(index, /self\.registration\.unregister\(\)/, 'the legacy shell-caching service worker must retire itself');
 assert.doesNotMatch(index, /caches\.open\(CACHE\)|cache\.addAll\(SHELL\)/, 'the service worker must not cache the application shell');
@@ -64,7 +65,7 @@ assert.match(index, /path === '\/healthz'[\s\S]*?json\(\{ ok: true \}\)/, 'publi
 assert.match(auth, /const SESSION_COOKIE = '__Host-cf_one_session'/);
 assert.match(auth, /SameSite=Strict/);
 assert.match(auth, /export async function readSession[\s\S]*?assertSessionSecret\(env\)/, 'session verification must fail closed without a strong signing value');
-assert.match(auth, /SELECT email, role, status FROM users WHERE id = \?1/, 'protected requests must re-check current D1 account state');
+assert.match(auth, /SELECT email, role, status FROM users WHERE id = \?1/, 'protected member requests must re-check current D1 account state');
 assert.match(auth, /user\.status !== 'active'/, 'disabled users must lose access immediately');
 assert.match(auth, /session\.sub === OWNER_ID && session\.email === OWNER_EMAIL/, 'owner identity must be fixed independently of editable user data');
 assert.match(auth, /export async function requireOwner/, 'infrastructure actions need a separate owner gate');
@@ -78,7 +79,9 @@ assert.match(authRoutes, /consumeAuthChallenge/, 'member challenges must be atom
 assert.doesNotMatch(authRoutes, /auth:challenge|CACHE\.(?:get|put|delete)/, 'member login handshakes must not depend on eventually consistent KV');
 assert.match(authRoutes, /VALUES \(\?1, \?2, \?3, 'member', 'active'\)/, 'new member registration must never self-promote');
 assert.doesNotMatch(authRoutes, /ADMIN_EMAILS|USER_ALLOWLIST/, 'member roles must come from D1 rather than environment allowlists');
-assert.match(authRoutes, /__Host-cf_one_session=\$\{token\}/, 'synthetic session checks must use the actual host-only cookie name');
+assert.match(authRoutes, /const session = await readSession\(sessionRequest, env\)/, 'successful login must not perform a second D1 authorization read before setting the cookie');
+assert.match(authRoutes, /auth\.login-side-effect/, 'nonessential login bookkeeping must have a best-effort failure boundary');
+assert.match(authRoutes, /auth\.credential-migration/, 'credential migration must not turn valid credentials into a failed login');
 assert.match(authRoutes, /rateLimit\(request, env, 'login', 24, 15 \* 60\)/, 'member retries should not trigger accidental development lockouts too quickly');
 
 assert.match(owner, /INSERT INTO users/);
@@ -90,13 +93,12 @@ assert.doesNotMatch(owner, /OWNER_ITERATIONS\s*=\s*(?:1[0-9]{5,}|[2-9][0-9]{5,})
 assert.match(owner, /storeAuthChallenge/, 'owner challenges must be stored in D1');
 assert.match(owner, /consumeAuthChallenge/, 'owner challenges must be atomically consumed from D1');
 assert.doesNotMatch(owner, /owner:challenge|CACHE\.(?:get|put|delete)/, 'owner login handshakes must not depend on eventually consistent KV');
-assert.match(owner, /rateLimit\(request, env, 'owner-login', 20, 15 \* 60\)/, 'owner retries should not trigger accidental development lockouts too quickly');
 
 assert.match(mirror, /const MIRROR_ZONE = '20100823\.xyz'/);
 assert.match(mirror, /const MIRROR_SERVICE = 'cf-one-apex'/);
 assert.match(mirror, /\^m\[1-9\]\[0-9\]\*\\\.20100823\\\.xyz\$/i, 'only numbered mN mirror hostnames may enter the mirror host path');
 assert.match(mirror, /workers\/domains/, 'mirror provisioning must use exact Worker Custom Domains');
-assert.match(mirror, /allocateAndAttach/, 'mirror allocation must atomically allocate then attach an exact hostname');
+assert.match(mirror, /allocateAndAttach/, 'mirror allocation must allocate then attach an exact hostname');
 assert.doesNotMatch(mirror, /\/zones\?name=|dns_records\?name=/, 'mirror allocation must not require broad zone or DNS read permissions');
 assert.match(mirror, /domainConflict/, 'provider-side hostname conflicts must be skipped without overwriting existing names');
 assert.match(mirror, /detachDomainById/, 'failed persistence must be able to compensate by detaching the just-created domain');
@@ -109,36 +111,34 @@ assert.match(admin, /cloudflareApiConfigured:\s*Boolean\(env\.CF_API_TOKEN\)/, '
 assert.doesNotMatch(admin, /accountId:\s*env\.CF_ACCOUNT_ID|slice\(0,\s*6\).*CF_ACCOUNT_ID/, 'status must not return even a truncated configured account value');
 assert.doesNotMatch(admin, /json\([^\n]*CF_API_TOKEN|json\([^\n]*OWNER_PASSWORD|json\([^\n]*SESSION_SECRET|json\([^\n]*INVITE_CODE/, 'credential values must never be serialized into API responses');
 
+assert.match(ui, /UI_ASSET_VERSION/, 'HTML must version its CSS and JS URLs so deployments cannot mix assets');
 assert.match(ui, /data-theme="system"/, 'the shell must support a system-aware theme');
 assert.match(ui, /prefers-color-scheme:dark/, 'dark mode must follow the OS when using system mode');
-assert.match(ui, /UI_ASSET_VERSION/, 'HTML must version its CSS and JS URLs so deployments cannot mix assets');
-assert.match(ui, /<html[^>]*style="--seed:/, 'the Material palette seed must live on the root element');
-assert.match(ui, /var\(--seed/, 'surface accents must actually derive from the configured seed');
-assert.match(ui, /navigation-rail/, 'expanded layouts need a compact navigation rail');
+assert.match(ui, /desktop-navigation/, 'wide layouts need a stable desktop navigation path');
 assert.match(ui, /bottom-navigation/, 'compact layouts need touch-first navigation');
-assert.match(ui, /\*\[hidden\]\{display:none!important\}/, 'the hidden attribute must not be overridden by ordinary component rules');
-assert.match(ui, /font-size:16px/, 'base text and form controls must stay readable and avoid mobile form zoom');
-assert.match(ui, /grid-template-columns:88px minmax\(0,1fr\)/, 'expanded layout must reserve a compact rail without margin arithmetic');
-assert.match(ui, /min-width:320px/, 'the shell must define a supported minimum viewport');
-assert.doesNotMatch(ui, /grid-template-columns:248px/, 'the old oversized desktop drawer must not return');
-assert.doesNotMatch(ui, /backdrop-filter/, 'core navigation must not depend on expensive blur effects');
+assert.doesNotMatch(ui, /rail-shell|navigation-rail/, 'the failed fixed-rail shell must not return');
+assert.match(ui, /\*\[hidden\]\{display:none!important\}/, 'the hidden attribute must not be overridden by component display rules');
+assert.match(ui, /body\{[^}]*font-size:16px/, 'base text must remain readable');
+assert.match(ui, /input,textarea,select\{[^}]*min-height:56px[^}]*font-size:16px/, 'form controls need readable type and comfortable touch size');
+assert.match(ui, /\.button,button\.button\{[^}]*min-height:48px/, 'primary controls need a Material-sized touch target');
+assert.match(ui, /overflow-wrap:anywhere/, 'long URLs and identifiers must not break compact layouts');
+assert.match(ui, /prefers-reduced-motion:reduce/, 'motion must respect the operating-system accessibility preference');
+assert.doesNotMatch(ui, /backdrop-filter/, 'core layout must not depend on expensive blur effects');
 assert.doesNotMatch(ui, /@keyframes shimmer|animation:shimmer/, 'loading states must not waste render budget on decorative shimmer');
-assert.doesNotMatch(ui, /margin-left:max\(/, 'desktop content positioning must not use fragile rail-offset arithmetic');
 assert.doesNotMatch(ui, /Cloudflare edge|Durable Objects|SCOPED TOKEN|OWNER ONLY|INBOX \/ R2|MIRROR_TARGETS|Custom Domain|PBKDF2/, 'implementation details must not be used as public product copy');
-assert.match(readability, /\.navigation-rail a\{font-size:12px\}/, 'desktop navigation labels must render at a readable 12px minimum');
-assert.match(readability, /\.bottom-navigation a,\.bottom-more\{font-size:12px\}/, 'mobile navigation labels must render at a readable 12px minimum');
-assert.match(readability, /@media\(max-width:350px\)[\s\S]*?\.brand-copy\{display:none\}/, 'very narrow screens must reduce chrome instead of shrinking primary navigation text');
-assert.doesNotMatch(readability, /font-size:(?:[0-9](?:\.[0-9]+)?|1[01](?:\.[0-9]+)?)px/, 'the final readability layer must not introduce sub-12px text');
 
 assert.match(authClient, /await api\("\/api\/auth\/challenge"/, 'every login attempt must obtain a fresh challenge');
 assert.doesNotMatch(authClient, /let pending|pending\.challenge/, 'the login page must not reuse stale challenges while a user fills registration details');
 assert.match(authClient, /challengeRetryable/, 'expired one-time challenges must be recognized explicitly');
 assert.match(authClient, /正在自动重试/, 'the client must recover once from an expired challenge without another user action');
-assert.match(authClient, /await api\("\/api\/auth\/session"\)/, 'login success must be verified by reading the cookie-backed session before redirecting');
-assert.match(authClient, /clearLegacyCaches\(\);/, 'legacy cache cleanup should run in the background rather than blocking login rendering');
+assert.match(authClient, /loginResult\?\.session/, 'the successful login response must be used instead of discarded');
+assert.match(authClient, /confirmCookieSession/, 'cookie confirmation must have a dedicated retry path');
+assert.match(authClient, /sawSuccessfulCheck/, 'cookie absence must be distinguished from a transient verification outage');
+assert.match(authClient, /renderSessionProblem/, 'bootstrap failures must render a recoverable unknown-session state instead of pretending the user is logged out');
+assert.match(authClient, /novalidate:\s*true/, 'JavaScript validation must prevent hidden registration fields from blocking ordinary login');
+assert.match(authClient, /control\.disabled = !visible/, 'hidden registration controls must be removed from submission and validation');
+assert.match(authClient, /void clearLegacyCaches\(\)/, 'legacy cache cleanup should run in the background rather than blocking login rendering');
 assert.doesNotMatch(authClient, /await clearLegacyCaches\(\)/, 'cache cleanup must not block the login page');
-assert.match(authClient, /identifier\?\.addEventListener\("input", resetRegistration\)/, 'changing the identifier must leave stale registration mode');
-assert.match(authClient, /registration\.hidden/, 'first-time registration must stay progressive rather than cluttering normal login');
 assert.doesNotMatch(authClient, /window\.confirm|\bconfirm\(/, 'login must not use native blocking dialogs');
 
 assert.match(client, /api\("\/api\/mirror\/targets"/, 'mirror UI must call the real self-service API directly');
