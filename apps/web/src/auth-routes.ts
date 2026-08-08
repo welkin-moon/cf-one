@@ -6,6 +6,7 @@ import {
   issueSession,
   openVerifier,
   randomToken,
+  readSession,
   sealVerifier,
   sessionCookie,
   verifierProof
@@ -44,6 +45,10 @@ function publicSession(session: Session | null): unknown {
     csrf: session.csrf,
     deviceChanged: Boolean(session.deviceChanged)
   };
+}
+
+function diagnosticName(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error;
 }
 
 async function findUser(env: Env, email: string): Promise<UserRow | null> {
@@ -98,8 +103,12 @@ export async function authRoutes(request: Request, env: Env, path: string): Prom
       const verifier = await openVerifier(user.credential_box, env);
       if (!verifier || !constantTimeEqual(await verifierProof(verifier, challenge.challenge), proof)) throw new HttpError(403, 'invalid credentials');
       if (env.CREDENTIAL_SECRET && env.CREDENTIAL_SECRET.length >= 32) {
-        const migratedBox = await sealVerifier(verifier, env);
-        await env.DB.prepare('UPDATE users SET credential_box = ?1 WHERE id = ?2').bind(migratedBox, user.id).run();
+        try {
+          const migratedBox = await sealVerifier(verifier, env);
+          await env.DB.prepare('UPDATE users SET credential_box = ?1 WHERE id = ?2').bind(migratedBox, user.id).run();
+        } catch (error) {
+          console.warn('auth.credential-migration', { userId: user.id, error: diagnosticName(error) });
+        }
       }
     } else {
       if (!env.INVITE_CODE) throw new HttpError(503, 'registration is disabled until INVITE_CODE is configured');
@@ -134,12 +143,19 @@ export async function authRoutes(request: Request, env: Env, path: string): Prom
         'sec-ch-ua-platform': request.headers.get('sec-ch-ua-platform') ?? ''
       }
     });
-    const session = await currentSession(sessionRequest, env);
-    await env.DB.batch([
-      env.DB.prepare('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?1').bind(user.id),
-      env.DB.prepare(`INSERT INTO devices (user_id, device_hash) VALUES (?1, ?2)
-        ON CONFLICT(user_id, device_hash) DO UPDATE SET last_seen_at = CURRENT_TIMESTAMP`).bind(user.id, session?.device ?? 'unknown')
-    ]);
+    const session = await readSession(sessionRequest, env);
+    if (!session) throw new HttpError(500, 'session issuance failed');
+
+    try {
+      await env.DB.batch([
+        env.DB.prepare('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?1').bind(user.id),
+        env.DB.prepare(`INSERT INTO devices (user_id, device_hash) VALUES (?1, ?2)
+          ON CONFLICT(user_id, device_hash) DO UPDATE SET last_seen_at = CURRENT_TIMESTAMP`).bind(user.id, session.device)
+      ]);
+    } catch (error) {
+      console.warn('auth.login-side-effect', { userId: user.id, error: diagnosticName(error) });
+    }
+
     const response = json({ ok: true, session: publicSession(session) });
     response.headers.set('set-cookie', sessionCookie(token));
     return response;
