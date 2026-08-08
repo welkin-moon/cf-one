@@ -1,6 +1,7 @@
 import type { Env } from './env';
 import { adminRoutes } from './admin';
 import { authRoutes } from './auth-routes';
+import { AUTH_JS } from './auth-client';
 import { APP_JS } from './client';
 import { requireFeature, siteProfile, type Feature } from './config';
 import { chatRoutes, socialRoutes, toolsRoutes } from './features';
@@ -9,20 +10,20 @@ import { mailRoutes, receiveEmail } from './mail';
 import { isMirrorHostname, mirrorApiRoutes, mirrorHostRoute } from './mirror';
 import { ownerAuthRoutes } from './owner';
 import { requireSameOrigin } from './security';
-import { APP_CSS, appPage } from './ui';
+import { APP_CSS, appPage } from './ui-v2';
 
 const ALLOWED_HOSTS = new Set(['lunarlab.uk', '20100823.xyz']);
 const PAGE_FEATURES: Record<string, Feature> = {
   chat: 'chat', social: 'social', tools: 'tools', mail: 'mail', mirror: 'mirror', store: 'store', admin: 'admin'
 };
 
-function asset(body: string, type: string): Response {
-  return new Response(body, { headers: { 'content-type': type, 'cache-control': 'public, max-age=300, stale-while-revalidate=86400' } });
+function asset(body: string, type: string, cache = 'no-store'): Response {
+  return new Response(body, { headers: { 'content-type': type, 'cache-control': cache } });
 }
 
 function icon(accent: string): Response {
   const safe = /^#[0-9a-f]{6}$/i.test(accent) ? accent : '#a78bfa';
-  return asset(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="118" fill="#f3edf7"/><circle cx="256" cy="256" r="154" fill="${safe}" opacity=".2"/><circle cx="256" cy="256" r="112" fill="${safe}"/><circle cx="306" cy="214" r="92" fill="#f3edf7"/></svg>`, 'image/svg+xml');
+  return asset(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="118" fill="#f3edf7"/><circle cx="256" cy="256" r="154" fill="${safe}" opacity=".2"/><circle cx="256" cy="256" r="112" fill="${safe}"/><circle cx="306" cy="214" r="92" fill="#f3edf7"/></svg>`, 'image/svg+xml', 'public, max-age=3600');
 }
 
 async function route(request: Request, env: Env): Promise<Response> {
@@ -37,6 +38,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 
   if (path === '/assets/app.css' && request.method === 'GET') return asset(APP_CSS, 'text/css; charset=utf-8');
   if (path === '/assets/app.js' && request.method === 'GET') return asset(APP_JS, 'text/javascript; charset=utf-8');
+  if (path === '/assets/auth.js' && request.method === 'GET') return asset(AUTH_JS, 'text/javascript; charset=utf-8');
   if (path === '/icon.svg' && request.method === 'GET') return icon(profile.accent);
   if (path === '/' && request.method === 'GET') return html(appPage(profile, path));
   if (path === '/healthz' && request.method === 'GET') return json({ ok: true });
@@ -52,10 +54,12 @@ async function route(request: Request, env: Env): Promise<Response> {
       background_color: '#fffbfe',
       theme_color: '#fffbfe',
       icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }]
-    }, 200, { 'content-type': 'application/manifest+json; charset=utf-8', 'cache-control': 'public, max-age=300' });
+    }, 200, { 'content-type': 'application/manifest+json; charset=utf-8', 'cache-control': 'no-store' });
   }
   if (path === '/sw.js' && request.method === 'GET') {
-    return new Response(`const CACHE='cf-one-v5';const SHELL=['/','/assets/app.css','/assets/app.js','/icon.svg'];self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));self.addEventListener('fetch',event=>{const url=new URL(event.request.url);if(event.request.method!=='GET'||url.origin!==location.origin||url.pathname.startsWith('/api/'))return;event.respondWith(fetch(event.request).then(response=>{if(response.ok){const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));}return response}).catch(()=>caches.match(event.request).then(hit=>hit||caches.match('/'))))});`, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache', 'service-worker-allowed': '/' } });
+    return new Response(`self.addEventListener('install',event=>event.waitUntil(self.skipWaiting()));self.addEventListener('activate',event=>event.waitUntil(Promise.all([caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('cf-one-')).map(key=>caches.delete(key)))),self.registration.unregister()]).then(()=>self.clients.claim())));`, {
+      headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store', 'service-worker-allowed': '/' }
+    });
   }
   if (path.startsWith('/app/') && request.method === 'GET') {
     const page = path.split('/').filter(Boolean).pop() ?? '';
