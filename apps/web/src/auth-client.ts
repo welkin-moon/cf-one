@@ -27,6 +27,7 @@ function h(tag, attrs, ...children) {
 }
 
 function clear(node) { node?.replaceChildren(); }
+function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 function base64url(bytes) { let value = ""; for (const byte of bytes) value += String.fromCharCode(byte); return btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, ""); }
 function fromBase64url(value) { const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - value.length % 4) % 4); return Uint8Array.from(atob(padded), c => c.charCodeAt(0)); }
 
@@ -65,7 +66,7 @@ function friendly(raw, status) {
 
 async function api(path, options = {}) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
+  const timer = setTimeout(() => controller.abort(), 20000);
   try {
     const headers = new Headers(options.headers || {});
     headers.set("accept", "application/json");
@@ -93,7 +94,9 @@ async function api(path, options = {}) {
       throw timeout;
     }
     throw error;
-  } finally { clearTimeout(timer); }
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function setupTheme() {
@@ -107,6 +110,7 @@ function setupTheme() {
     if (themeToggle) {
       themeToggle.textContent = mode === "system" ? "◐" : mode === "light" ? "☀" : "☾";
       themeToggle.setAttribute("aria-label", mode === "system" ? "显示模式：跟随系统" : mode === "light" ? "显示模式：浅色" : "显示模式：深色");
+      themeToggle.title = themeToggle.getAttribute("aria-label");
     }
   };
   update();
@@ -124,12 +128,13 @@ function setupNavigation() {
   navSheet?.addEventListener("click", event => { if (event.target === navSheet) navSheet.close(); });
 }
 
-function passwordField(label, name, autocomplete, placeholder) {
-  const input = h("input", { name, type: "password", autocomplete, placeholder, required: true, maxlength: 256 });
+function passwordField(label, name, autocomplete, placeholder, required = true) {
+  const input = h("input", { name, type: "password", autocomplete, placeholder, required, maxlength: 256 });
   const toggle = h("button", { class: "password-toggle", type: "button", text: "显示", onclick: () => {
     const visible = input.type === "text";
     input.type = visible ? "password" : "text";
     toggle.textContent = visible ? "显示" : "隐藏";
+    toggle.setAttribute("aria-pressed", String(!visible));
   }});
   return h("label", { class: "field" }, h("span", { class: "field-label", text: label }), h("span", { class: "field-control password-control" }, input, toggle));
 }
@@ -166,8 +171,12 @@ function renderSignedIn() {
       h("div", { class: "row" },
         h("a", { class: "button filled", href: "/", text: "返回首页" }),
         h("button", { class: "button text", type: "button", text: "退出登录", onclick: async () => {
-          try { await api("/api/auth/logout", { method: "POST", headers: { "x-csrf-token": session.csrf } }); location.reload(); }
-          catch (error) { console.warn("logout failed", error?.status || 0); }
+          try {
+            await api("/api/auth/logout", { method: "POST", headers: { "x-csrf-token": session.csrf } });
+            location.reload();
+          } catch (error) {
+            console.warn("logout failed", error?.status || 0);
+          }
         }})
       )
     )
@@ -178,6 +187,64 @@ function challengeRetryable(error) {
   const raw = String(error?.raw || "").toLowerCase();
   return error?.status === 403 && (raw.includes("challenge expired") || raw.includes("already used")) ||
     error?.status === 400 && raw.includes("valid login challenge");
+}
+
+async function readSessionWithRetry(attempts = 2) {
+  let lastError = null;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt) await wait(attempt === 1 ? 250 : 650);
+    try {
+      const result = await api("/api/auth/session");
+      return result?.session ?? null;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("无法确认登录状态");
+}
+
+async function confirmCookieSession(candidate) {
+  const delays = [0, 180, 550, 1100];
+  let lastError = null;
+  let sawSuccessfulCheck = false;
+  for (const delay of delays) {
+    if (delay) await wait(delay);
+    try {
+      const result = await api("/api/auth/session");
+      sawSuccessfulCheck = true;
+      if (result?.session) return result.session;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (sawSuccessfulCheck) {
+    const error = new Error("密码已经验证，但浏览器没有保留登录 Cookie。请检查隐私设置后重试。");
+    error.status = 0;
+    throw error;
+  }
+  if (candidate) return candidate;
+  throw lastError || new Error("登录已经提交，但暂时无法确认会话，请重试");
+}
+
+function renderSessionProblem(error) {
+  session = null;
+  document.body.classList.remove("is-admin");
+  if (account) {
+    clear(account);
+    account.append(h("span", { class: "pill error", text: "状态未知" }));
+  }
+  app?.setAttribute("aria-busy", "false");
+  clear(app);
+  const retry = h("button", { class: "button filled", type: "button", text: "重新检查", onclick: () => bootstrap() });
+  const login = h("button", { class: "button text", type: "button", text: "仍然打开登录", onclick: () => { session = null; updateAccount(); renderLogin(); } });
+  app?.append(h("div", { class: "auth-layout" },
+    h("section", { class: "auth-card" },
+      h("h2", { text: "暂时无法确认登录状态" }),
+      h("p", { text: "没有把你擅自判定为已退出。可能只是网络或服务端短暂没有响应。" }),
+      h("div", { class: "auth-message error", text: error?.message || "登录状态检查失败" }),
+      h("div", { class: "row" }, retry, login)
+    )
+  ));
 }
 
 function renderLogin() {
@@ -192,7 +259,7 @@ function renderLogin() {
     passwordField("邀请码", "inviteCode", "one-time-code", "输入邀请码")
   );
   const submit = h("button", { class: "button filled", type: "submit", text: "登录" });
-  const form = h("form", null, identifierField, password, registration, message, submit);
+  const form = h("form", { novalidate: true }, identifierField, password, registration, message, submit);
   const identifier = identifierField.querySelector("input");
 
   const setMessage = (text, error = false, success = false) => {
@@ -200,10 +267,16 @@ function renderLogin() {
     message.className = "auth-message" + (error ? " error" : success ? " success" : "");
   };
 
+  const setRegistrationVisible = visible => {
+    registration.hidden = !visible;
+    for (const control of registration.querySelectorAll("input,button,select,textarea")) control.disabled = !visible;
+    submit.textContent = visible ? "创建账号" : "登录";
+  };
+  setRegistrationVisible(false);
+
   const resetRegistration = () => {
     if (registration.hidden) return;
-    registration.hidden = true;
-    submit.textContent = "登录";
+    setRegistrationVisible(false);
     setMessage("");
   };
   identifier?.addEventListener("input", resetRegistration);
@@ -211,10 +284,8 @@ function renderLogin() {
   async function runHandshake(values, loginName, passwordValue, allowDiscoverRegistration) {
     setMessage("正在获取登录验证…");
     const challenge = await api("/api/auth/challenge", { method: "POST", body: { email: loginName } });
-    if (challenge.mode !== "login" && allowDiscoverRegistration && registration.hidden) {
-      return { needsRegistration: true };
-    }
-    setMessage(challenge.iterations >= 200000 ? "正在计算密码验证，请稍候…" : "正在验证密码…");
+    if (challenge.mode !== "login" && allowDiscoverRegistration && registration.hidden) return { needsRegistration: true, session: null };
+    setMessage(challenge.iterations >= 200000 ? "正在本机计算密码验证，请稍候…" : "正在验证密码…");
     const verifier = await deriveVerifier(passwordValue, challenge.salt, challenge.iterations);
     const loginProof = await proof(verifier, challenge.challenge);
     const payload = { email: loginName, challengeId: challenge.challengeId, proof: loginProof };
@@ -224,8 +295,8 @@ function renderLogin() {
       payload.inviteCode = String(values.inviteCode || "");
     }
     setMessage("正在建立会话…");
-    await api("/api/auth/login", { method: "POST", body: payload });
-    return { needsRegistration: false };
+    const loginResult = await api("/api/auth/login", { method: "POST", body: payload });
+    return { needsRegistration: false, session: loginResult?.session ?? null };
   }
 
   form.addEventListener("submit", async event => {
@@ -250,23 +321,17 @@ function renderLogin() {
       } catch (error) {
         if (!challengeRetryable(error)) throw error;
         setMessage("登录验证刚好失效，正在自动重试…");
+        await wait(120);
         result = await runHandshake(values, loginName, passwordValue, false);
       }
       if (result.needsRegistration) {
-        registration.hidden = false;
-        submit.textContent = "创建账号";
+        setRegistrationVisible(true);
         setMessage("检测到这是首次加入，请补充邀请码后继续。", false, true);
         registration.querySelector("input[name=displayName]")?.focus();
         return;
       }
-      setMessage("凭据已验证，正在确认会话…");
-      const check = await api("/api/auth/session");
-      if (!check?.session) {
-        const error = new Error("凭据已验证，但浏览器没有保存登录会话。请允许此站点使用 Cookie 后重试。");
-        error.status = 0;
-        throw error;
-      }
-      session = check.session;
+      setMessage("密码已验证，正在确认浏览器会话…");
+      session = await confirmCookieSession(result.session);
       updateAccount();
       setMessage("登录成功，正在进入首页…", false, true);
       location.replace("/");
@@ -282,8 +347,8 @@ function renderLogin() {
 
   app?.append(h("div", { class: "auth-layout" },
     h("section", { class: "auth-card" },
-      h("h2", { text: "登录" }),
-      h("p", { text: "输入账号信息继续；首次加入时才会出现邀请码。" }),
+      h("h2", { text: "欢迎回来" }),
+      h("p", { text: "输入账号信息继续。只有第一次加入时才会要求邀请码。" }),
       form
     )
   ));
@@ -303,13 +368,22 @@ async function clearLegacyCaches() {
   } catch {}
 }
 
-async function start() {
+async function bootstrap() {
+  app?.setAttribute("aria-busy", "true");
+  try {
+    session = await readSessionWithRetry(2);
+    updateAccount();
+    if (session) renderSignedIn(); else renderLogin();
+  } catch (error) {
+    renderSessionProblem(error);
+  }
+}
+
+function start() {
   setupTheme();
   setupNavigation();
-  clearLegacyCaches();
-  try { session = (await api("/api/auth/session")).session; } catch { session = null; }
-  updateAccount();
-  if (session) renderSignedIn(); else renderLogin();
+  void clearLegacyCaches();
+  void bootstrap();
 }
 
 start();
