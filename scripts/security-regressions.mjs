@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = relative => readFile(path.join(root, relative), 'utf8');
 
-const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoutes, ui, client, authClient, authChallenge, authMigration] = await Promise.all([
+const [wrangler, provision, index, auth, owner, deploy, mirror, mirrorHost, admin, authRoutes, ui, client, authClient, authChallenge, authMigration] = await Promise.all([
   read('apps/web/wrangler.toml'),
   read('scripts/provision-cloudflare.mjs'),
   read('apps/web/src/index.ts'),
@@ -14,6 +14,7 @@ const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoute
   read('apps/web/src/owner.ts'),
   read('scripts/deploy-cloudflare.mjs'),
   read('apps/web/src/mirror.ts'),
+  read('apps/web/src/mirror-host.ts'),
   read('apps/web/src/admin-routes.ts'),
   read('apps/web/src/auth-routes.ts'),
   read('apps/web/src/ui.ts'),
@@ -50,6 +51,8 @@ assert.match(index, /const ALLOWED_HOSTS = new Set\(\['lunarlab\.uk', '20100823\
 assert.match(index, /request\.clone\(\) as unknown as Request/, 'owner probing must clone and explicitly narrow the request type');
 assert.match(index, /ownerAuthRoutes\(ownerRequest, env, path\)/, 'owner probing must not consume the member request body');
 assert.match(index, /isMirrorHostname\(host\)/, 'mirror hosts must go through the dedicated D1-backed proxy path');
+assert.match(index, /import \{ mirrorHostRoute \} from '\.\/mirror-host';/, 'mirror traffic must use the dedicated relay implementation');
+assert.doesNotMatch(index, /mirrorApiRoutes, mirrorHostRoute[^\n]*from '\.\/mirror'/, 'the retired single-origin mirror proxy must not be wired into production');
 assert.doesNotMatch(index, /endsWith\(['"]\.20100823\.xyz/, 'homepage routing must never broadly accept arbitrary subdomains');
 assert.match(index, /from '\.\/ui';/, 'production must use the canonical UI source');
 assert.doesNotMatch(index, /ui-v2|ui-readability|APP_CSS_READABILITY/, 'production must not stack alternate UI implementations or CSS patch layers');
@@ -105,6 +108,17 @@ assert.match(mirror, /detachDomainById/, 'failed persistence must be able to com
 assert.match(mirror, /mirror\.domain-provider/, 'provider failures need server-side diagnostics');
 assert.doesNotMatch(mirror, /console\.error\([^\n]*(?:CF_API_TOKEN|authorization|Bearer)/i, 'provider diagnostics must never log credentials');
 assert.doesNotMatch(mirror, /\*\.20100823\.xyz|pattern.*\*/, 'mirror provisioning must never create a wildcard route');
+
+assert.match(mirrorHost, /const RELAY_PREFIX = '\/__cfone_origin__\/'/, 'cross-origin subresources must use a dedicated relay namespace');
+assert.match(mirrorHost, /relaySignature/, 'relay origins must be authenticated, not selected by a raw user-controlled URL');
+assert.match(mirrorHost, /validRelaySignature/, 'relay requests must verify their HMAC signature');
+assert.match(mirrorHost, /RELAY_TTL_SECONDS/, 'relay capabilities must expire');
+assert.match(mirrorHost, /forbiddenPublicHost/, 'relay targets must reject local, private, and mirror-owned hosts');
+assert.match(mirrorHost, /__cfr_/, 'cross-origin cookies must be namespaced rather than leaked between upstream origins');
+assert.match(mirrorHost, /iframe\[src\][\s\S]*?false\)\)/, 'cross-origin iframes must not be collapsed onto the mirror origin');
+assert.doesNotMatch(mirrorHost, /xFamily|twimg\.com|twitter\.com|['"]x\.com['"]/, 'the mirror relay must remain site-agnostic rather than hard-coding one provider family');
+assert.doesNotMatch(mirrorHost, /searchParams\.get\(['"](?:url|target|origin)['"]\)/, 'the mirror host must not expose an unsigned open-proxy query parameter');
+assert.doesNotMatch(mirrorHost, /console\.error\([^\n]*(?:SESSION_SECRET|authorization|Bearer)/i, 'relay diagnostics must never log credentials');
 
 assert.match(admin, /ownerOnly\(session\)/, 'infrastructure and role management must enforce the owner boundary');
 assert.match(admin, /cloudflareApiConfigured:\s*Boolean\(env\.CF_API_TOKEN\)/, 'status may expose only whether the token is configured');
