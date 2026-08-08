@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = relative => readFile(path.join(root, relative), 'utf8');
 
-const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoutes, ui, client, authChallenge, authMigration] = await Promise.all([
+const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoutes, ui, client, authClient, authChallenge, authMigration] = await Promise.all([
   read('apps/web/wrangler.toml'),
   read('scripts/provision-cloudflare.mjs'),
   read('apps/web/src/index.ts'),
@@ -16,15 +16,19 @@ const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoute
   read('apps/web/src/mirror.ts'),
   read('apps/web/src/admin-routes.ts'),
   read('apps/web/src/auth-routes.ts'),
-  read('apps/web/src/ui.ts'),
+  read('apps/web/src/ui-v2.ts'),
   read('apps/web/src/client.ts'),
+  read('apps/web/src/auth-client.ts'),
   read('apps/web/src/auth-challenge.ts'),
   read('apps/web/migrations/0008_auth_challenges.sql')
 ]);
 
 const clientSource = client.match(/export const APP_JS = String\.raw`([\s\S]*)`;\s*$/)?.[1];
 assert.ok(clientSource, 'client.ts must expose one static APP_JS template');
-assert.doesNotThrow(() => new Function(clientSource), 'the JavaScript sent to browsers must parse successfully');
+assert.doesNotThrow(() => new Function(clientSource), 'the JavaScript sent to app pages must parse successfully');
+const authClientSource = authClient.match(/export const AUTH_JS = String\.raw`([\s\S]*)`;\s*$/)?.[1];
+assert.ok(authClientSource, 'auth-client.ts must expose one static AUTH_JS template');
+assert.doesNotThrow(() => new Function(authClientSource), 'the JavaScript sent to the login page must parse successfully');
 
 assert.match(wrangler, /workers_dev\s*=\s*false/, 'workers.dev must stay disabled');
 assert.match(wrangler, /keep_vars\s*=\s*true/, 'dashboard variables must survive deploys');
@@ -47,7 +51,11 @@ assert.match(index, /request\.clone\(\) as unknown as Request/, 'owner probing m
 assert.match(index, /ownerAuthRoutes\(ownerRequest, env, path\)/, 'owner probing must not consume the member request body');
 assert.match(index, /isMirrorHostname\(host\)/, 'mirror hosts must go through the dedicated D1-backed proxy path');
 assert.doesNotMatch(index, /endsWith\(['"]\.20100823\.xyz/, 'homepage routing must never broadly accept arbitrary subdomains');
-assert.match(index, /return asset\(APP_JS, 'text\/javascript; charset=utf-8'\)/, 'the browser must receive the checked-in client source directly');
+assert.match(index, /return asset\(APP_JS, 'text\/javascript; charset=utf-8'\)/, 'app pages must receive the checked-in client source directly');
+assert.match(index, /return asset\(AUTH_JS, 'text\/javascript; charset=utf-8'\)/, 'login must use an isolated checked-in client source');
+assert.match(index, /cache = 'no-store'/, 'rapid deployments must not mix stale JS or CSS with new HTML');
+assert.match(index, /self\.registration\.unregister\(\)/, 'the legacy shell-caching service worker must retire itself');
+assert.doesNotMatch(index, /caches\.open\(CACHE\)|cache\.addAll\(SHELL\)/, 'the service worker must not cache the application shell');
 assert.doesNotMatch(index, /MIRROR_CLIENT|ownerAware|mirrorAware|APP_JS\s*\.replace/, 'request-time source rewriting is forbidden');
 assert.match(index, /path === '\/healthz'[\s\S]*?json\(\{ ok: true \}\)/, 'public health output must stay minimal');
 
@@ -69,6 +77,7 @@ assert.doesNotMatch(authRoutes, /auth:challenge|CACHE\.(?:get|put|delete)/, 'mem
 assert.match(authRoutes, /VALUES \(\?1, \?2, \?3, 'member', 'active'\)/, 'new member registration must never self-promote');
 assert.doesNotMatch(authRoutes, /ADMIN_EMAILS|USER_ALLOWLIST/, 'member roles must come from D1 rather than environment allowlists');
 assert.match(authRoutes, /__Host-cf_one_session=\$\{token\}/, 'synthetic session checks must use the actual host-only cookie name');
+assert.match(authRoutes, /rateLimit\(request, env, 'login', 24, 15 \* 60\)/, 'member retries should not trigger accidental development lockouts too quickly');
 
 assert.match(owner, /INSERT INTO users/);
 assert.match(owner, /ON CONFLICT\(id\) DO UPDATE/, 'owner login must repair its D1 identity');
@@ -79,6 +88,7 @@ assert.doesNotMatch(owner, /OWNER_ITERATIONS\s*=\s*(?:1[0-9]{5,}|[2-9][0-9]{5,})
 assert.match(owner, /storeAuthChallenge/, 'owner challenges must be stored in D1');
 assert.match(owner, /consumeAuthChallenge/, 'owner challenges must be atomically consumed from D1');
 assert.doesNotMatch(owner, /owner:challenge|CACHE\.(?:get|put|delete)/, 'owner login handshakes must not depend on eventually consistent KV');
+assert.match(owner, /rateLimit\(request, env, 'owner-login', 20, 15 \* 60\)/, 'owner retries should not trigger accidental development lockouts too quickly');
 
 assert.match(mirror, /const MIRROR_ZONE = '20100823\.xyz'/);
 assert.match(mirror, /const MIRROR_SERVICE = 'cf-one-apex'/);
@@ -99,14 +109,23 @@ assert.doesNotMatch(admin, /json\([^\n]*CF_API_TOKEN|json\([^\n]*OWNER_PASSWORD|
 
 assert.match(ui, /data-theme="system"/, 'the shell must support a system-aware theme');
 assert.match(ui, /prefers-color-scheme:dark/, 'dark mode must follow the OS when using system mode');
-assert.match(ui, /<html[^>]*style="--accent:/, 'theme accent must live on the root element so root design tokens can resolve it');
-assert.match(ui, /bottom-navigation/, 'small screens need touch-first navigation');
-assert.doesNotMatch(ui, /navigation-rail/, 'desktop navigation must not depend on a fixed side rail');
-assert.match(ui, /\[hidden\]\{display:none!important\}/, 'the hidden attribute must not be overridden by component display rules');
-assert.match(ui, /body\.is-admin \[data-admin-only\]\{display:flex!important\}/, 'admin-only navigation and cards must restore their native flex layout');
+assert.match(ui, /UI_ASSET_VERSION/, 'HTML must version its CSS and JS URLs so deployments cannot mix assets');
+assert.match(ui, /navigation-drawer/, 'expanded layouts need a stable navigation drawer rather than offset arithmetic');
+assert.match(ui, /bottom-navigation/, 'compact layouts need touch-first navigation');
+assert.match(ui, /\*\[hidden\]\{display:none!important\}/, 'the hidden attribute must not be overridden by component display rules');
+assert.match(ui, /font-size:16px/, 'base text and controls must stay readable and avoid mobile form zoom');
+assert.match(ui, /grid-template-columns:248px minmax\(0,1fr\)/, 'desktop layout must use a real grid rather than margin offsets');
 assert.doesNotMatch(ui, /margin-left:max\(/, 'desktop content positioning must not use fragile rail-offset arithmetic');
-assert.doesNotMatch(ui, /backdrop-filter/, 'the primary app shell must not require expensive blur effects to remain legible');
+assert.doesNotMatch(ui, /font-size:(?:9|10)px/, 'primary UI text must not be rendered at unreadably small sizes');
 assert.doesNotMatch(ui, /Cloudflare edge|Durable Objects|SCOPED TOKEN|OWNER ONLY|INBOX \/ R2|MIRROR_TARGETS|Custom Domain|PBKDF2/, 'implementation details must not be used as public product copy');
+
+assert.match(authClient, /await api\("\/api\/auth\/challenge"/, 'every login submission must obtain a fresh challenge');
+assert.doesNotMatch(authClient, /let pending|pending\.challenge/, 'the login page must not reuse stale challenges while a user fills registration details');
+assert.match(authClient, /await api\("\/api\/auth\/session"\)/, 'login success must be verified by reading the cookie-backed session before redirecting');
+assert.match(authClient, /clearLegacyCaches/, 'login must actively remove stale shell caches left by older deployments');
+assert.match(authClient, /registration\.hidden/, 'first-time registration must stay progressive rather than cluttering normal login');
+assert.doesNotMatch(authClient, /window\.confirm|\bconfirm\(/, 'login must not use native blocking dialogs');
+
 assert.match(client, /api\("\/api\/mirror\/targets"/, 'mirror UI must call the real self-service API directly');
 assert.doesNotMatch(client, /window\.confirm|\bconfirm\(/, 'destructive actions must use the in-app confirmation dialog');
 assert.doesNotMatch(client, /Cloudflare 资源|D1 \/ KV \/ R2|MIRROR_TARGETS|PBKDF2 密钥|Custom Domain|P1/, 'client-visible copy must not expose implementation details');
