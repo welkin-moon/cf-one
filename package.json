@@ -6,7 +6,7 @@
     "dev": "pnpm --dir apps/web dev",
     "deploy": "pnpm cf:deploy",
     "cf:provision": "node scripts/provision-cloudflare.mjs",
-    "cf:deploy": "node scripts/deploy-cloudflare.mjs",
+    "cf:deploy": "pnpm check && node scripts/deploy-cloudflare.mjs",
     "typecheck": "pnpm --dir apps/web typecheck",
     "test:security": "node scripts/security-regressions.mjs",
     "check": "pnpm test:security && pnpm typecheck && pnpm --dir apps/web dry-run",
