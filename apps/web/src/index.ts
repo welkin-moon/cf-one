@@ -57,7 +57,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (path === '/healthz' && request.method === 'GET') return json({ ok: true });
   if (path === '/test' && request.method === 'GET') return html(testDirectoryPage(profile.name));
   const publicTestPage = path.match(/^\/test\/([A-Za-z0-9\u4e00-\u9fff-]{1,96})$/);
-  if (publicTestPage && request.method === 'GET') return html(testRunPage(profile.name, publicTestPage[1]!));
+  if (publicTestPage && request.method === 'GET') return html(testRunPage(profile.name, publicTestPage[1]!), 200, { 'x-cf-one-test-sandbox': '1' });
   if (path === '/app/test' && request.method === 'GET') return html(testStudioPage(profile.name));
   if (path === '/manifest.webmanifest' && request.method === 'GET') {
     return json({
