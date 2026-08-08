@@ -137,6 +137,55 @@ function rewrittenMirrorResponse(response: Response, body: string): Response {
   return new Response(body, { status: response.status, statusText: response.statusText, headers });
 }
 
+function mirrorDiagnosticPath(pathname: string): string {
+  return pathname.replace(/^\/__cfone_origin__\/[^/]+\/[^/]+/, '/__cfone_origin__/REDACTED');
+}
+
+function cookieCount(value: string | null): number {
+  return value ? value.split(';').map(part => part.trim()).filter(Boolean).length : 0;
+}
+
+function setCookieCount(headers: Headers): number {
+  const modern = headers as Headers & { getSetCookie?: () => string[] };
+  if (typeof modern.getSetCookie === 'function') return modern.getSetCookie().length;
+  return headers.has('set-cookie') ? 1 : 0;
+}
+
+async function logMirrorClientResponse(request: Request, response: Response, pathname: string): Promise<void> {
+  if (request.headers.get('sec-fetch-dest') !== 'empty') return;
+  const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
+  const summary: Record<string, unknown> = {
+    path: mirrorDiagnosticPath(pathname),
+    method: request.method,
+    status: response.status,
+    contentType: contentType.split(';')[0],
+    requestCookieCount: cookieCount(request.headers.get('cookie')),
+    setCookieCount: setCookieCount(response.headers)
+  };
+  const declaredLength = Number(response.headers.get('content-length') ?? 0);
+  const readable = response.body && (!Number.isFinite(declaredLength) || declaredLength <= 1_000_000) &&
+    (contentType.includes('json') || contentType.includes('text/html') || contentType.includes('text/plain'));
+  if (readable) {
+    try {
+      const text = await response.clone().text();
+      summary.bytes = text.length;
+      summary.relayRefs = (text.match(/__cfone_origin__/g) ?? []).length;
+      summary.hasEmailLabel = text.includes('Email or username');
+      summary.hasContinuePhone = text.includes('Continue with phone');
+      if (contentType.includes('json')) {
+        try {
+          const parsed: unknown = JSON.parse(text);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            summary.topLevelKeys = Object.keys(parsed as Record<string, unknown>).slice(0, 24);
+            summary.hasErrorKey = Object.prototype.hasOwnProperty.call(parsed, 'error') || Object.prototype.hasOwnProperty.call(parsed, 'errors');
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+  console.log('mirror.compat-diagnostic', JSON.stringify(summary));
+}
+
 async function mirrorRuntimeRoute(request: Request, env: Env, hostname: string): Promise<Response> {
   if (!['GET', 'HEAD'].includes(request.method)) throw new HttpError(405, 'mirror runtime only supports GET and HEAD');
   const row = await env.DB.prepare(`SELECT slug, origin FROM mirror_targets
@@ -160,6 +209,7 @@ async function mirrorCompatibilityRoute(request: Request, env: Env, hostname: st
   if (incoming.pathname === MIRROR_RUNTIME_PATH) return mirrorRuntimeRoute(request, env, hostname);
 
   const response = await mirrorHostRoute(request, env, hostname);
+  await logMirrorClientResponse(request, response, incoming.pathname);
   if (request.method === 'HEAD' || !response.body) return response;
 
   const type = (response.headers.get('content-type') ?? '').toLowerCase();
