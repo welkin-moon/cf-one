@@ -27,6 +27,10 @@ function buffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
+function diagnosticName(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error;
+}
+
 async function ownerSalt(env: Env): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', encoder.encode(`cf-one-owner:${env.SESSION_SECRET}`));
   return base64url(new Uint8Array(digest).slice(0, 16));
@@ -88,7 +92,12 @@ export async function ownerAuthRoutes(request: Request, env: Env, path: string):
     const expected = await verifierProof(verifier, stored.challenge);
     if (!constantTimeEqual(expected, proof)) throw new HttpError(403, 'invalid owner credentials');
 
-    await ensureOwnerUser(env);
+    try {
+      await ensureOwnerUser(env);
+    } catch (error) {
+      console.warn('auth.owner-identity-repair', { error: diagnosticName(error) });
+    }
+
     const token = await issueSession({ id: OWNER_ID, email: OWNER_EMAIL, role: 'admin' }, env, request);
     const sessionRequest = new Request(request.url, {
       headers: {
@@ -100,9 +109,10 @@ export async function ownerAuthRoutes(request: Request, env: Env, path: string):
       }
     });
     const session = await readSession(sessionRequest, env);
+    if (!session) throw new HttpError(500, 'owner session issuance failed');
     const response = json({
       ok: true,
-      session: session ? {
+      session: {
         id: OWNER_ID,
         email: OWNER_USERNAME,
         role: 'admin',
@@ -110,7 +120,7 @@ export async function ownerAuthRoutes(request: Request, env: Env, path: string):
         expiresAt: new Date(session.exp * 1000).toISOString(),
         csrf: session.csrf,
         deviceChanged: false
-      } : null
+      }
     });
     response.headers.set('set-cookie', sessionCookie(token));
     return response;
