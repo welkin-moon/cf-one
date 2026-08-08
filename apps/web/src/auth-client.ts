@@ -4,6 +4,8 @@ const app = document.querySelector("#app");
 const account = document.querySelector("#account");
 const themeToggle = document.querySelector("#theme-toggle");
 const themeColor = document.querySelector("#theme-color");
+const navSheet = document.querySelector("#nav-sheet");
+const moreNav = document.querySelector("#more-nav");
 let session = null;
 let submitting = false;
 
@@ -48,9 +50,9 @@ function friendly(raw, status) {
     ["invalid invite code", "邀请码不正确"],
     ["account disabled", "这个账号已停用"],
     ["account unavailable", "这个账号当前不可用"],
-    ["login challenge expired", "登录验证已过期，请重新提交"],
-    ["valid login challenge required", "登录验证无效，请重新提交"],
-    ["valid owner login challenge required", "登录验证无效，请重新提交"],
+    ["login challenge expired", "登录验证已过期，正在重新获取"],
+    ["valid login challenge required", "登录验证无效，正在重新获取"],
+    ["valid owner login challenge required", "登录验证无效，正在重新获取"],
     ["too many requests", "尝试次数太多，请稍等一会再试"],
     ["registration is disabled", "当前暂时不能创建新账号"],
     ["session_secret", "登录服务配置暂时不可用"]
@@ -79,11 +81,17 @@ async function api(path, options = {}) {
       const raw = payload && typeof payload === "object" && payload.error ? payload.error : "请求失败";
       const error = new Error(friendly(raw, response.status));
       error.status = response.status;
+      error.raw = String(raw || "");
       throw error;
     }
     return payload;
   } catch (error) {
-    if (error?.name === "AbortError") throw new Error("网络响应超时，请检查连接后重试");
+    if (error?.name === "AbortError") {
+      const timeout = new Error("网络响应超时，请检查连接后重试");
+      timeout.status = 0;
+      timeout.raw = "network timeout";
+      throw timeout;
+    }
     throw error;
   } finally { clearTimeout(timer); }
 }
@@ -110,6 +118,12 @@ function setupTheme() {
   media.addEventListener?.("change", update);
 }
 
+function setupNavigation() {
+  if (moreNav && navSheet) moreNav.addEventListener("click", () => navSheet.showModal());
+  navSheet?.querySelector("[data-close-sheet]")?.addEventListener("click", () => navSheet.close());
+  navSheet?.addEventListener("click", event => { if (event.target === navSheet) navSheet.close(); });
+}
+
 function passwordField(label, name, autocomplete, placeholder) {
   const input = h("input", { name, type: "password", autocomplete, placeholder, required: true, maxlength: 256 });
   const toggle = h("button", { class: "password-toggle", type: "button", text: "显示", onclick: () => {
@@ -124,9 +138,17 @@ function textField(label, name, type, placeholder, required = true) {
   return h("label", { class: "field" }, h("span", { class: "field-label", text: label }), h("span", { class: "field-control" }, h("input", { name, type, placeholder, required, autocomplete: name === "email" ? "username" : "off" })));
 }
 
+function refreshAdminNavigation() {
+  const admin = Boolean(session && session.role === "admin");
+  document.body.classList.toggle("is-admin", admin);
+  const adminMore = document.querySelector("[data-admin-more]");
+  if (adminMore) adminMore.hidden = !admin;
+}
+
 function updateAccount() {
   if (!account) return;
   clear(account);
+  refreshAdminNavigation();
   if (!session) {
     account.append(h("span", { class: "pill", text: "未登录" }));
     return;
@@ -138,29 +160,73 @@ function renderSignedIn() {
   app?.setAttribute("aria-busy", "false");
   clear(app);
   app?.append(h("div", { class: "auth-layout" },
-    h("section", { class: "auth-card" }, h("h2", { text: "已经登录" }), h("p", { text: "当前会话有效，可以直接继续使用。" }), h("div", { class: "row" }, h("a", { class: "button filled", href: "/", text: "返回首页" }), h("button", { class: "button text", type: "button", text: "退出登录", onclick: async () => { try { await api("/api/auth/logout", { method: "POST", headers: { "x-csrf-token": session.csrf } }); location.reload(); } catch {} } }))),
-    h("section", { class: "auth-card" }, h("h2", { text: "账号" }), h("p", { text: session.owner ? "站主账号" : session.email }), h("div", { class: "auth-help-item" }, h("strong", { text: "会话有效期" }), h("p", { text: new Date(session.expiresAt).toLocaleString("zh-CN") })))
+    h("section", { class: "auth-card" },
+      h("h2", { text: "已经登录" }),
+      h("p", { text: session.owner ? "当前使用站主账号。" : "当前会话有效，可以直接继续使用。" }),
+      h("div", { class: "row" },
+        h("a", { class: "button filled", href: "/", text: "返回首页" }),
+        h("button", { class: "button text", type: "button", text: "退出登录", onclick: async () => {
+          try { await api("/api/auth/logout", { method: "POST", headers: { "x-csrf-token": session.csrf } }); location.reload(); }
+          catch (error) { console.warn("logout failed", error?.status || 0); }
+        }})
+      )
+    )
   ));
+}
+
+function challengeRetryable(error) {
+  const raw = String(error?.raw || "").toLowerCase();
+  return error?.status === 403 && (raw.includes("challenge expired") || raw.includes("already used")) ||
+    error?.status === 400 && raw.includes("valid login challenge");
 }
 
 function renderLogin() {
   app?.setAttribute("aria-busy", "false");
   clear(app);
   const message = h("div", { class: "auth-message", role: "status", "aria-live": "polite" });
-  const identifier = textField("用户名或邮箱", "email", "text", "admin 或 you@example.com");
+  const identifierField = textField("用户名或邮箱", "email", "text", "admin 或 you@example.com");
   const password = passwordField("密码", "password", "current-password", "输入密码");
   const registration = h("div", { class: "stack", hidden: true },
-    h("div", { class: "callout", text: "这是这个邮箱第一次加入。填写显示名称和邀请码后再提交一次即可创建账号。" }),
+    h("div", { class: "callout", text: "这是这个邮箱第一次加入。再填写显示名称和邀请码即可创建账号。" }),
     textField("显示名称", "displayName", "text", "你希望别人看到的名字", false),
     passwordField("邀请码", "inviteCode", "one-time-code", "输入邀请码")
   );
   const submit = h("button", { class: "button filled", type: "submit", text: "登录" });
-  const form = h("form", null, identifier, password, registration, message, submit);
+  const form = h("form", null, identifierField, password, registration, message, submit);
+  const identifier = identifierField.querySelector("input");
 
   const setMessage = (text, error = false, success = false) => {
     message.textContent = text || "";
     message.className = "auth-message" + (error ? " error" : success ? " success" : "");
   };
+
+  const resetRegistration = () => {
+    if (registration.hidden) return;
+    registration.hidden = true;
+    submit.textContent = "登录";
+    setMessage("");
+  };
+  identifier?.addEventListener("input", resetRegistration);
+
+  async function runHandshake(values, loginName, passwordValue, allowDiscoverRegistration) {
+    setMessage("正在获取登录验证…");
+    const challenge = await api("/api/auth/challenge", { method: "POST", body: { email: loginName } });
+    if (challenge.mode !== "login" && allowDiscoverRegistration && registration.hidden) {
+      return { needsRegistration: true };
+    }
+    setMessage(challenge.iterations >= 200000 ? "正在计算密码验证，请稍候…" : "正在验证密码…");
+    const verifier = await deriveVerifier(passwordValue, challenge.salt, challenge.iterations);
+    const loginProof = await proof(verifier, challenge.challenge);
+    const payload = { email: loginName, challengeId: challenge.challengeId, proof: loginProof };
+    if (challenge.mode !== "login") {
+      payload.verifier = verifier;
+      payload.displayName = String(values.displayName || "");
+      payload.inviteCode = String(values.inviteCode || "");
+    }
+    setMessage("正在建立会话…");
+    await api("/api/auth/login", { method: "POST", body: payload });
+    return { needsRegistration: false };
+  }
 
   form.addEventListener("submit", async event => {
     event.preventDefault();
@@ -175,29 +241,31 @@ function renderLogin() {
 
     submitting = true;
     submit.disabled = true;
-    submit.textContent = "正在验证…";
-    setMessage("正在安全验证账号…");
+    form.setAttribute("aria-busy", "true");
+    submit.textContent = registration.hidden ? "正在登录…" : "正在创建…";
     try {
-      const challenge = await api("/api/auth/challenge", { method: "POST", body: { email: loginName } });
-      if (challenge.mode !== "login" && registration.hidden) {
+      let result;
+      try {
+        result = await runHandshake(values, loginName, passwordValue, true);
+      } catch (error) {
+        if (!challengeRetryable(error)) throw error;
+        setMessage("登录验证刚好失效，正在自动重试…");
+        result = await runHandshake(values, loginName, passwordValue, false);
+      }
+      if (result.needsRegistration) {
         registration.hidden = false;
         submit.textContent = "创建账号";
-        setMessage("检测到这是首次加入，请补充邀请码后再次提交。", false, true);
+        setMessage("检测到这是首次加入，请补充邀请码后继续。", false, true);
         registration.querySelector("input[name=displayName]")?.focus();
         return;
       }
-      const verifier = await deriveVerifier(passwordValue, challenge.salt, challenge.iterations);
-      const loginProof = await proof(verifier, challenge.challenge);
-      const payload = { email: loginName, challengeId: challenge.challengeId, proof: loginProof };
-      if (challenge.mode !== "login") {
-        payload.verifier = verifier;
-        payload.displayName = String(values.displayName || "");
-        payload.inviteCode = String(values.inviteCode || "");
-      }
-      await api("/api/auth/login", { method: "POST", body: payload });
       setMessage("凭据已验证，正在确认会话…");
       const check = await api("/api/auth/session");
-      if (!check?.session) throw new Error("凭据已验证，但浏览器没有保存登录会话。请检查 Cookie/隐私设置后重试。");
+      if (!check?.session) {
+        const error = new Error("凭据已验证，但浏览器没有保存登录会话。请允许此站点使用 Cookie 后重试。");
+        error.status = 0;
+        throw error;
+      }
       session = check.session;
       updateAccount();
       setMessage("登录成功，正在进入首页…", false, true);
@@ -207,14 +275,19 @@ function renderLogin() {
     } finally {
       submitting = false;
       submit.disabled = false;
+      form.removeAttribute("aria-busy");
       submit.textContent = registration.hidden ? "登录" : "创建账号";
     }
   });
 
   app?.append(h("div", { class: "auth-layout" },
-    h("section", { class: "auth-card" }, h("h2", { text: "欢迎回来" }), h("p", { text: "输入账号信息继续。首次加入时系统会再询问邀请码。" }), form),
-    h("section", { class: "auth-card auth-help" }, h("div", { class: "auth-help-item" }, h("strong", { text: "登录状态会被确认" }), h("p", { text: "验证密码后还会检查会话 Cookie 是否真的写入，避免假成功或反复掉登录。" })), h("div", { class: "auth-help-item" }, h("strong", { text: "不会复用旧验证请求" }), h("p", { text: "每次提交都会获取新的登录 challenge，填邀请码耗时也不会把旧 challenge 拿来继续用。" })))
+    h("section", { class: "auth-card" },
+      h("h2", { text: "登录" }),
+      h("p", { text: "输入账号信息继续；首次加入时才会出现邀请码。" }),
+      form
+    )
   ));
+  identifier?.focus();
 }
 
 async function clearLegacyCaches() {
@@ -232,7 +305,8 @@ async function clearLegacyCaches() {
 
 async function start() {
   setupTheme();
-  await clearLegacyCaches();
+  setupNavigation();
+  clearLegacyCaches();
   try { session = (await api("/api/auth/session")).session; } catch { session = null; }
   updateAccount();
   if (session) renderSignedIn(); else renderLogin();
