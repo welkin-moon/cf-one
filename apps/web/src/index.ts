@@ -22,6 +22,9 @@ const ALLOWED_HOSTS = new Set(['lunarlab.uk', '20100823.xyz']);
 const MIRROR_RUNTIME_PATH = '/__cfone_runtime__.js';
 const MIRROR_REWRITE_LIMIT = 6 * 1024 * 1024;
 const DOWNSTREAM_IDENTITY_HEADERS = ['cf-brapi-request-id', 'cf-brapi-devtools', 'cf-biso-devtools', 'signature-agent', 'signature', 'signature-input'];
+const MIRROR_PATH_COMPAT: Record<string, Array<{ pattern: RegExp; prefix: string }>> = {
+  'x.com': [{ pattern: /^\/1\.1\//, prefix: '/i/api' }]
+};
 const PAGE_FEATURES: Record<string, Feature> = {
   files: 'files', tools: 'tools', mail: 'mail', mirror: 'mirror', store: 'store', admin: 'admin'
 };
@@ -205,18 +208,43 @@ async function mirrorRuntimeRoute(request: Request, env: Env, hostname: string):
   return new Response(body, { headers });
 }
 
-function mirrorUpstreamRequest(request: Request): Request {
-  if (!DOWNSTREAM_IDENTITY_HEADERS.some(name => request.headers.has(name))) return request;
+async function mirrorUpstreamRequest(request: Request, env: Env, hostname: string): Promise<Request> {
   const headers = new Headers(request.headers);
-  for (const name of DOWNSTREAM_IDENTITY_HEADERS) headers.delete(name);
-  return new Request(request, { headers });
+  let changed = false;
+  for (const name of DOWNSTREAM_IDENTITY_HEADERS) {
+    if (!headers.has(name)) continue;
+    headers.delete(name);
+    changed = true;
+  }
+
+  const incoming = new URL(request.url);
+  let pathname = incoming.pathname;
+  if (pathname.startsWith('/1.1/')) {
+    const row = await env.DB.prepare(`SELECT origin_host FROM mirror_targets
+      WHERE lower(hostname) = ?1 AND state = 'active'`).bind(hostname.toLowerCase()).first<{ origin_host: string }>();
+    const rules = row ? MIRROR_PATH_COMPAT[row.origin_host.toLowerCase()] : undefined;
+    const rule = rules?.find(candidate => candidate.pattern.test(pathname));
+    if (rule) {
+      pathname = `${rule.prefix}${pathname}`;
+      incoming.pathname = pathname;
+      changed = true;
+    }
+  }
+
+  if (!changed) return request;
+  return new Request(incoming.href, {
+    method: request.method,
+    headers,
+    body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
+    redirect: request.redirect
+  });
 }
 
 async function mirrorCompatibilityRoute(request: Request, env: Env, hostname: string): Promise<Response> {
   const incoming = new URL(request.url);
   if (incoming.pathname === MIRROR_RUNTIME_PATH) return mirrorRuntimeRoute(request, env, hostname);
 
-  const response = await mirrorHostRoute(mirrorUpstreamRequest(request), env, hostname);
+  const response = await mirrorHostRoute(await mirrorUpstreamRequest(request, env, hostname), env, hostname);
   await logMirrorClientResponse(request, response, incoming.pathname);
   if (request.method === 'HEAD' || !response.body) return response;
 
