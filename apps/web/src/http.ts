@@ -13,12 +13,6 @@ export function withSecurityHeaders(response: Response): Response {
   const headers = new Headers(response.headers);
   const isMirror = headers.has('x-cf-one-mirror');
   if (isMirror) {
-    // A transformed mirror document no longer has the upstream origin topology that its
-    // original CSP describes. Keeping a mechanically rewritten policy can block module
-    // entrypoints and runtime requests even though every relayed origin is already signed,
-    // SSRF-filtered, and isolated on a dedicated mirror hostname.
-    headers.delete('content-security-policy');
-    headers.delete('content-security-policy-report-only');
     headers.set('strict-transport-security', 'max-age=31536000');
     headers.set('x-content-type-options', 'nosniff');
   } else {
