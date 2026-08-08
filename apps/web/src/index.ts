@@ -21,6 +21,7 @@ import { APP_CSS, appPage } from './ui';
 const ALLOWED_HOSTS = new Set(['lunarlab.uk', '20100823.xyz']);
 const MIRROR_RUNTIME_PATH = '/__cfone_runtime__.js';
 const MIRROR_REWRITE_LIMIT = 6 * 1024 * 1024;
+const DOWNSTREAM_IDENTITY_HEADERS = ['cf-brapi-request-id', 'cf-brapi-devtools', 'cf-biso-devtools', 'signature-agent', 'signature', 'signature-input'];
 const PAGE_FEATURES: Record<string, Feature> = {
   files: 'files', tools: 'tools', mail: 'mail', mirror: 'mirror', store: 'store', admin: 'admin'
 };
@@ -204,11 +205,18 @@ async function mirrorRuntimeRoute(request: Request, env: Env, hostname: string):
   return new Response(body, { headers });
 }
 
+function mirrorUpstreamRequest(request: Request): Request {
+  if (!DOWNSTREAM_IDENTITY_HEADERS.some(name => request.headers.has(name))) return request;
+  const headers = new Headers(request.headers);
+  for (const name of DOWNSTREAM_IDENTITY_HEADERS) headers.delete(name);
+  return new Request(request, { headers });
+}
+
 async function mirrorCompatibilityRoute(request: Request, env: Env, hostname: string): Promise<Response> {
   const incoming = new URL(request.url);
   if (incoming.pathname === MIRROR_RUNTIME_PATH) return mirrorRuntimeRoute(request, env, hostname);
 
-  const response = await mirrorHostRoute(request, env, hostname);
+  const response = await mirrorHostRoute(mirrorUpstreamRequest(request), env, hostname);
   await logMirrorClientResponse(request, response, incoming.pathname);
   if (request.method === 'HEAD' || !response.body) return response;
 
