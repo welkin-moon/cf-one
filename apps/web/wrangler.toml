@@ -22,3 +22,19 @@ migrations_dir = "migrations"
 [[kv_namespaces]]
 binding = "CACHE"
 id = "00000000000000000000000000000000"
+
+[[ratelimits]]
+name = "STORAGE_USER_RATE_LIMITER"
+namespace_id = "2010082301"
+
+  [ratelimits.simple]
+  limit = 180
+  period = 60
+
+[[ratelimits]]
+name = "STORAGE_GLOBAL_RATE_LIMITER"
+namespace_id = "2010082302"
+
+  [ratelimits.simple]
+  limit = 3000
+  period = 60
