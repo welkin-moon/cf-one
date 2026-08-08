@@ -17,5 +17,16 @@ function run(arguments_) {
 }
 
 await run(['d1', 'migrations', 'apply', process.env.CF_ONE_D1_NAME?.trim() || 'cf-one', '--remote', '--config', 'wrangler.generated.jsonc']);
-await run(['deploy', '--config', 'wrangler.generated.jsonc']);
-console.log('cf-one-apex deployed; dashboard-managed runtime variables were preserved and were not read or rewritten by the build.');
+
+// Code/config versions and traffic deployments are deliberately separated from
+// Worker triggers. `wrangler deploy` also synchronizes configured routes/custom
+// domains, which can delete API-created mN.20100823.xyz mirror domains because
+// those dynamic hostnames are intentionally absent from the checked-in config.
+// `versions upload` + `versions deploy` updates the Worker version without
+// touching routes/domains. Trigger changes must be performed explicitly with
+// `wrangler triggers deploy` during infrastructure maintenance.
+const versionTag = `cf-one-${Date.now().toString(36)}`;
+await run(['versions', 'upload', '--config', 'wrangler.generated.jsonc', '--tag', versionTag, '--message', 'cf-one automated build']);
+await run(['versions', 'deploy', '--config', 'wrangler.generated.jsonc', '--version-tag', versionTag, '--yes', '--message', 'cf-one automated build']);
+
+console.log(`cf-one-apex version ${versionTag} deployed; Worker routes and Custom Domains were not synchronized, so API-created mirror domains are preserved.`);
