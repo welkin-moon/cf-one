@@ -263,7 +263,7 @@ async function tokenRequest(parameters: URLSearchParams): Promise<GoogleTokenRes
     headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
     body: parameters.toString()
   });
-  const body = await response.json<GoogleTokenResponse>().catch(() => ({}));
+  const body = await response.json<GoogleTokenResponse>().catch(() => ({} as GoogleTokenResponse));
   if (!response.ok || body.error) throw new HttpError(503, 'Google Drive authorization needs administrator attention');
   return body;
 }
@@ -769,7 +769,7 @@ async function uploadChunk(request: Request, env: Env, uploadId: string): Promis
       return googleFailure(response, 'upload.chunk');
     }
     keepTrafficCharge = true;
-    const file = await response.json<GoogleFile>().catch(() => ({}));
+    const file = await response.json<GoogleFile>().catch(() => ({} as GoogleFile));
     if (!file.id) throw new HttpError(502, 'Google Drive completed the upload without a file id');
     const localId = crypto.randomUUID();
     try {
