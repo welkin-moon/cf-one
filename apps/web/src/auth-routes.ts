@@ -58,7 +58,7 @@ export async function authRoutes(request: Request, env: Env, path: string): Prom
 
   if (path === '/api/auth/challenge' && request.method === 'POST') {
     assertSessionSecret(env);
-    await rateLimit(request, env, 'challenge', 20, 15 * 60);
+    await rateLimit(request, env, 'challenge', 40, 15 * 60);
     const body = await readJson<{ email?: string }>(request);
     const email = text(body.email).trim().toLowerCase();
     if (!validEmail(email)) throw new HttpError(400, 'valid email required');
@@ -83,7 +83,7 @@ export async function authRoutes(request: Request, env: Env, path: string): Prom
 
   if (path === '/api/auth/login' && request.method === 'POST') {
     assertSessionSecret(env);
-    await rateLimit(request, env, 'login', 12, 15 * 60);
+    await rateLimit(request, env, 'login', 24, 15 * 60);
     const body = await readJson<{ email?: string; challengeId?: string; proof?: string; verifier?: string; inviteCode?: string; displayName?: string }>(request);
     const email = text(body.email).trim().toLowerCase();
     if (!validEmail(email)) throw new HttpError(400, 'valid email required');
