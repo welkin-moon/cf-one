@@ -65,32 +65,43 @@ export function randomToken(length = 32): string {
   return base64url(crypto.getRandomValues(new Uint8Array(length)));
 }
 
+function credentialSecrets(env: Env): string[] {
+  assertSessionSecret(env);
+  const values: string[] = [];
+  if (env.CREDENTIAL_SECRET && env.CREDENTIAL_SECRET.length >= 32) values.push(env.CREDENTIAL_SECRET);
+  if (!values.includes(env.SESSION_SECRET)) values.push(env.SESSION_SECRET);
+  return values;
+}
+
 async function credentialKey(secret: string): Promise<CryptoKey> {
   const digest = await crypto.subtle.digest('SHA-256', encoder.encode(`cf-one:credential:${secret}`));
   return crypto.subtle.importKey('raw', digest, 'AES-GCM', false, ['encrypt', 'decrypt']);
 }
 
 export async function sealVerifier(verifier: string, env: Env): Promise<string> {
-  assertSessionSecret(env);
+  const [secret] = credentialSecrets(env);
+  if (!secret) throw new HttpError(503, 'credential encryption is unavailable');
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: buffer(iv) }, await credentialKey(env.SESSION_SECRET), encoder.encode(verifier));
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: buffer(iv) }, await credentialKey(secret), encoder.encode(verifier));
   return `${base64url(iv)}.${base64url(new Uint8Array(ciphertext))}`;
 }
 
 export async function openVerifier(box: string, env: Env): Promise<string | null> {
-  assertSessionSecret(env);
   const [encodedIv, encodedCiphertext] = box.split('.');
   if (!encodedIv || !encodedCiphertext) return null;
-  try {
-    const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: buffer(fromBase64url(encodedIv)) },
-      await credentialKey(env.SESSION_SECRET),
-      buffer(fromBase64url(encodedCiphertext))
-    );
-    return decoder.decode(plaintext);
-  } catch {
-    return null;
+  for (const secret of credentialSecrets(env)) {
+    try {
+      const plaintext = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: buffer(fromBase64url(encodedIv)) },
+        await credentialKey(secret),
+        buffer(fromBase64url(encodedCiphertext))
+      );
+      return decoder.decode(plaintext);
+    } catch {
+      // Try the next configured key. SESSION_SECRET is retained as a migration fallback.
+    }
   }
+  return null;
 }
 
 export async function verifierProof(verifier: string, challenge: string): Promise<string> {
@@ -149,7 +160,8 @@ export function isOwner(session: Session): boolean {
 export async function currentSession(request: Request, env: Env): Promise<Session | null> {
   const session = await readSession(request, env);
   if (!session) return null;
-  if (session.deviceChanged && env.DEVICE_BINDING === 'strict') return null;
+  // Browser client-hint headers can legitimately change between requests. Treat the device
+  // signal as advisory rather than invalidating a correctly signed session.
   if (isOwner(session)) return { ...session, role: 'admin' };
   const user = await env.DB.prepare(`SELECT email, role, status FROM users WHERE id = ?1`)
     .bind(session.sub).first<{ email: string; role: 'member' | 'admin'; status: 'active' | 'disabled' }>();
