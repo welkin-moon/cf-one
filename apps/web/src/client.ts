@@ -47,6 +47,10 @@ function formatBytes(value) {
   do { amount /= 1024; unit++; } while (amount >= 1024 && unit < units.length - 1);
   return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: amount >= 100 ? 0 : amount >= 10 ? 1 : 2 }).format(amount) + " " + units[unit];
 }
+function percent(used, limit) {
+  const value = Number(limit) > 0 ? Number(used) / Number(limit) * 100 : Number(used) > 0 ? 100 : 0;
+  return Math.max(0, Math.min(100, value));
+}
 function field(label, name, type, placeholder, required, help, attributes) {
   const tag = type === "textarea" ? "textarea" : "input";
   const props = Object.assign({ name, type: tag === "input" ? type : null, placeholder, required }, attributes || {});
@@ -71,12 +75,20 @@ function setBusy(button, label) {
 function friendlyMessage(raw, status) {
   const message = String(raw || "").toLowerCase();
   const known = [
+    ["daily relay traffic limit reached", "今天的中转流量或请求额度已用完，请联系管理员处理"],
+    ["global storage capacity guard reached", "全站存储保护额度已达到上限，请联系管理员处理"],
+    ["google storage capacity guard reached", "Google 存储剩余空间触发安全保护，请联系管理员处理"],
+    ["global file count guard reached", "全站文件数量触发安全保护，请联系管理员处理"],
+    ["file count limit reached", "你的文件数量已达到上限，请联系管理员处理"],
+    ["too many active uploads", "同时上传的文件太多，请先完成或取消已有上传"],
     ["storage quota exceeded", "存储空间已达到限额，请联系管理员处理"],
     ["quota cannot be lower", "新额度不能低于当前已使用空间"],
+    ["global quota cannot be lower", "全站额度不能低于当前已使用和正在上传的空间"],
     ["google drive is not connected", "文件存储尚未连接，请联系管理员"],
     ["google drive oauth is not configured", "文件存储还没有完成初始化"],
     ["google drive authorization needs", "Google Drive 授权需要管理员重新处理"],
     ["google drive connection needs", "Google Drive 连接需要管理员处理"],
+    ["google drive rate limit", "Google Drive 当前触发上游限流，请联系管理员"],
     ["google drive request failed", "Google Drive 暂时不可用，请联系管理员"],
     ["upload session expired", "上传会话已过期，请重新上传"],
     ["invalid credentials", "用户名或密码不正确"],
@@ -88,6 +100,7 @@ function friendlyMessage(raw, status) {
     ["cloudflare", "域名服务暂时不可用，请稍后再试"]
   ];
   for (const [needle, replacement] of known) if (message.includes(needle)) return replacement;
+  if (status === 507) return "存储保护机制已阻止这次操作，请联系管理员";
   if (status === 500) return "服务暂时出现问题，请稍后再试";
   if (status === 503) return "这个功能暂时不可用，请联系管理员";
   if (status === 403) return "当前账号没有执行这个操作的权限";
@@ -220,6 +233,7 @@ async function renderFiles() {
   setReady();
   clear(app);
   const quotaBox = h("div", { class: "quota" });
+  const trafficBox = h("div", { class: "quota" });
   const files = h("div", { class: "list" });
   const uploads = h("div", { class: "stack" });
   const picker = h("input", { type: "file", multiple: true });
@@ -230,24 +244,33 @@ async function renderFiles() {
   route.value = localStorage.getItem("lms-drive-route") === "google" ? "google" : "worker";
   route.addEventListener("change", () => localStorage.setItem("lms-drive-route", route.value));
   const uploadButton = h("button", { class: "button filled", type: "button", text: "上传所选文件" });
-  const uploadPanel = panel("上传", "文件会计入你的个人额度。大文件会自动分块续传。", picker, uploadButton, uploads);
-  const listPanel = panel("我的文件", "下载时可以选择通过本站中转，或者直接交给 Google。", h("label", { class: "field" }, h("span", { class: "field-label", text: "下载路径" }), route), files);
-  app?.append(h("div", { class: "storage-grid" }, h("div", { class: "stack" }, panel("存储空间", null, quotaBox), uploadPanel), listPanel));
+  const uploadPanel = panel("上传", "文件会计入你的个人额度；上传流量也会计入当天的本站中转额度。大文件会自动分块续传。", picker, uploadButton, uploads);
+  const listPanel = panel("我的文件", "本站中转适合无法稳定直连 Google 的网络；Google 直连不消耗本站中转额度。", h("label", { class: "field" }, h("span", { class: "field-label", text: "下载路径" }), route), files);
+  app?.append(h("div", { class: "storage-grid" }, h("div", { class: "stack" }, panel("存储空间", null, quotaBox), panel("今日中转", "北京时间 00:00 重置。上传和本站中转下载都会计入。", trafficBox), uploadPanel), listPanel));
 
   async function refreshStatus() {
     const status = await api("/api/storage/status");
     clear(quotaBox);
+    clear(trafficBox);
     const used = Number(status.usedBytes || 0) + Number(status.reservedBytes || 0);
-    const limit = Math.max(1, Number(status.quotaBytes || 0));
-    const percent = Math.min(100, used / limit * 100);
+    const storagePercent = percent(used, status.quotaBytes);
     quotaBox.append(
-      h("div", { class: "quota-meta" }, h("strong", { text: formatBytes(used) + " / " + formatBytes(status.quotaBytes) }), h("span", { text: Math.round(percent) + "%" })),
-      h("div", { class: "quota-line" }, h("span", { style: "width:" + percent + "%" })),
-      h("div", { class: "muted tiny", text: status.reservedBytes ? "其中 " + formatBytes(status.reservedBytes) + " 正在上传" : "可用 " + formatBytes(status.availableBytes) })
+      h("div", { class: "quota-meta" }, h("strong", { text: formatBytes(used) + " / " + formatBytes(status.quotaBytes) }), h("span", { text: Math.round(storagePercent) + "%" })),
+      h("div", { class: "quota-line" }, h("span", { style: "width:" + storagePercent + "%" })),
+      h("div", { class: "muted tiny", text: (status.reservedBytes ? "其中 " + formatBytes(status.reservedBytes) + " 正在上传 · " : "") + "可用 " + formatBytes(status.availableBytes) + " · " + Number(status.fileCount || 0) + " / " + Number(status.fileCountLimit || 0) + " 个文件" })
     );
-    picker.disabled = !status.connected;
-    uploadButton.disabled = !status.connected;
+    const relayUsed = Number(status.dailyRelayBytesUsed || 0);
+    const relayLimit = Number(status.dailyRelayBytes || 0);
+    const relayPercent = percent(relayUsed, relayLimit);
+    trafficBox.append(
+      h("div", { class: "quota-meta" }, h("strong", { text: formatBytes(relayUsed) + " / " + formatBytes(relayLimit) }), h("span", { text: Math.round(relayPercent) + "%" })),
+      h("div", { class: "quota-line" }, h("span", { style: "width:" + relayPercent + "%" })),
+      h("div", { class: "muted tiny", text: "请求 " + Number(status.dailyRelayRequestsUsed || 0) + " / " + Number(status.dailyRelayRequests || 0) + (status.workerRelayAvailable ? "" : " · 已触发中转保护") })
+    );
+    picker.disabled = !status.connected || !status.workerRelayAvailable;
+    uploadButton.disabled = !status.connected || !status.workerRelayAvailable;
     if (!status.connected) uploads.replaceChildren(emptyState("存储尚未连接", "管理员完成 Google Drive 连接后即可上传。", "!"));
+    else if (!status.workerRelayAvailable) uploads.replaceChildren(emptyState("今日中转额度已用完", "上传和本站中转暂时停止，需要管理员调整额度或等待次日重置。", "!"));
     return status;
   }
 
@@ -285,7 +308,7 @@ async function renderFiles() {
     try {
       const created = await api("/api/storage/uploads", { method: "POST", body: { name: file.name, mimeType: file.type || "application/octet-stream", size: file.size } });
       uploadId = created.uploadId;
-      const chunkSize = Number(created.chunkBytes) || 8388608;
+      const chunkSize = Number(created.chunkBytes) || 16777216;
       let offset = 0;
       while (offset < file.size) {
         const end = Math.min(file.size, offset + chunkSize);
@@ -296,9 +319,9 @@ async function renderFiles() {
           body: blob
         });
         offset = result.complete ? file.size : Number(result.receivedBytes || end);
-        const percent = Math.min(100, offset / file.size * 100);
-        bar.style.width = percent + "%";
-        label.textContent = result.complete ? "上传完成" : "已上传 " + Math.round(percent) + "%";
+        const uploadPercent = Math.min(100, offset / file.size * 100);
+        bar.style.width = uploadPercent + "%";
+        label.textContent = result.complete ? "上传完成" : "已上传 " + Math.round(uploadPercent) + "%";
       }
       showToast(file.name + " 已上传");
     } catch (error) {
@@ -407,7 +430,7 @@ async function renderAdmin() {
 
   if (host === "lunarlab.uk") await renderStorageAdmin(sections);
   if (!session.owner) {
-    sections.append(panel("管理员账号", "你可以处理成员的存储额度；账号角色与域名设置仍由站主修改。", h("span", { class: "pill success", text: "管理员" })));
+    sections.append(panel("管理员账号", "你可以处理成员的存储与中转额度；账号角色与域名设置仍由站主修改。", h("span", { class: "pill success", text: "管理员" })));
     return;
   }
   await renderOwnerUsers(sections);
@@ -415,31 +438,95 @@ async function renderAdmin() {
 }
 
 async function renderStorageAdmin(sections) {
+  const guardBox = h("div", { class: "stack" });
+  if (session.owner) sections.append(panel("存储防护", "这些限制同时保护 Google Drive 容量、Worker 中转流量和 D1 文件索引规模。默认中转总量刻意低于 Google Drive API 的项目级日流量阈值。", guardBox));
   const quotaList = h("div", { class: "list" });
-  const quotaPanel = panel("成员存储额度", "达到限额后需要管理员调整。正在上传的文件也会预占空间。", quotaList);
-  sections.append(quotaPanel);
+  sections.append(panel("成员存储额度", "每个账号可单独设置容量、每日中转流量和每日中转请求数；达到限制后需要管理员处理。", quotaList));
+
   async function loadQuotas() {
     const response = await api("/api/storage/admin/quotas");
     clear(quotaList);
     if (session.owner) {
-      const defaultInput = h("input", { type: "number", min: "0", step: "0.1", value: String(Number(response.defaultQuotaBytes || 0) / 1073741824) });
-      const saveDefault = h("button", { class: "button tonal", text: "保存默认额度", onclick: async () => {
-        const value = Number(defaultInput.value);
-        if (!Number.isFinite(value) || value < 0) return showToast("请输入有效额度", true);
-        try { await api("/api/storage/admin/policy", { method: "PATCH", body: { quotaBytes: Math.round(value * 1073741824) } }); await loadQuotas(); showToast("默认额度已更新"); } catch (error) { showToast(error.message, true); }
-      }});
-      quotaList.append(h("div", { class: "list-item" }, h("strong", { text: "默认额度" }), h("div", { class: "row", style: "margin-top:10px" }, defaultInput, h("span", { text: "GiB" }), saveDefault)));
+      clear(guardBox);
+      const policy = response.policy || {};
+      const global = response.global || {};
+      const provider = response.provider;
+      const summary = h("div", { class: "status-grid" },
+        h("div", { class: "status-card" }, h("span", { class: "muted tiny", text: "全站容量" }), h("strong", { text: formatBytes(Number(global.usedBytes || 0) + Number(global.reservedBytes || 0)) + " / " + formatBytes(policy.totalQuotaBytes) })),
+        h("div", { class: "status-card" }, h("span", { class: "muted tiny", text: "今日中转" }), h("strong", { text: formatBytes(global.relayBytesToday) + " / " + formatBytes(policy.totalDailyRelayBytes) })),
+        h("div", { class: "status-card" }, h("span", { class: "muted tiny", text: "今日传输请求" }), h("strong", { text: Number(global.relayRequestsToday || 0) + " / " + Number(policy.totalDailyRelayRequests || 0) })),
+        h("div", { class: "status-card" }, h("span", { class: "muted tiny", text: "文件索引" }), h("strong", { text: Number(global.fileCount || 0) + " / " + Number(policy.totalFileCountLimit || 0) }))
+      );
+      guardBox.append(summary);
+      if (provider?.limit) guardBox.append(h("div", { class: "callout", text: "Google 账户实际用量：" + formatBytes(provider.usage) + " / " + formatBytes(provider.limit) + "；额外保留 " + formatBytes(policy.providerHeadroomBytes) + " 安全空间。" }));
+      const policyForm = h("form", null,
+        field("默认每用户容量（GiB）", "defaultQuotaGiB", "number", "10", true, null, { min: "0", step: "0.1", value: String(Number(policy.defaultQuotaBytes || 0) / 1073741824) }),
+        field("全站容量上限（GiB）", "totalQuotaGiB", "number", "4096", true, null, { min: "0", step: "1", value: String(Number(policy.totalQuotaBytes || 0) / 1073741824) }),
+        field("Google 账户保留空间（GiB）", "providerHeadroomGiB", "number", "50", true, "即使 LMS 自身还有额度，也不会把 Google 账户吃到这个安全余量以下。", { min: "0", step: "1", value: String(Number(policy.providerHeadroomBytes || 0) / 1073741824) }),
+        field("默认每用户日中转（GiB）", "defaultDailyRelayGiB", "number", "20", true, null, { min: "0", step: "0.1", value: String(Number(policy.defaultDailyRelayBytes || 0) / 1073741824) }),
+        field("全站日中转（GiB）", "totalDailyRelayGiB", "number", "200", true, "上传和本站中转下载都会计入；北京时间 00:00 重置。", { min: "0", step: "0.1", max: "900", value: String(Number(policy.totalDailyRelayBytes || 0) / 1073741824) }),
+        field("默认每用户日请求数", "defaultDailyRelayRequests", "number", "5000", true, null, { min: "0", step: "1", value: String(Number(policy.defaultDailyRelayRequests || 0)) }),
+        field("全站日请求数", "totalDailyRelayRequests", "number", "50000", true, null, { min: "0", step: "1", value: String(Number(policy.totalDailyRelayRequests || 0)) }),
+        field("默认每用户文件数", "defaultFileCountLimit", "number", "5000", true, null, { min: "0", step: "1", value: String(Number(policy.defaultFileCountLimit || 0)) }),
+        field("全站文件数", "totalFileCountLimit", "number", "50000", true, "限制 D1 中的文件索引和活跃上传记录规模。", { min: "0", step: "1", value: String(Number(policy.totalFileCountLimit || 0)) }),
+        h("button", { class: "button filled", type: "submit", text: "保存防护策略" })
+      );
+      policyForm.addEventListener("submit", async event => {
+        event.preventDefault();
+        const values = formValues(policyForm);
+        const gib = name => Math.round(Number(values[name]) * 1073741824);
+        const body = {
+          defaultQuotaBytes: gib("defaultQuotaGiB"),
+          totalQuotaBytes: gib("totalQuotaGiB"),
+          providerHeadroomBytes: gib("providerHeadroomGiB"),
+          defaultDailyRelayBytes: gib("defaultDailyRelayGiB"),
+          totalDailyRelayBytes: gib("totalDailyRelayGiB"),
+          defaultDailyRelayRequests: Number(values.defaultDailyRelayRequests),
+          totalDailyRelayRequests: Number(values.totalDailyRelayRequests),
+          defaultFileCountLimit: Number(values.defaultFileCountLimit),
+          totalFileCountLimit: Number(values.totalFileCountLimit)
+        };
+        if (Object.values(body).some(value => !Number.isFinite(value) || value < 0)) return showToast("请输入有效的防护额度", true);
+        const button = policyForm.querySelector("button");
+        const restore = setBusy(button, "保存中…");
+        try { await api("/api/storage/admin/policy", { method: "PATCH", body }); await loadQuotas(); showToast("存储防护策略已更新"); }
+        catch (error) { showToast(error.message, true); }
+        finally { restore(); }
+      });
+      guardBox.append(policyForm);
     }
+
     for (const user of response.users || []) {
-      const input = h("input", { type: "number", min: "0", step: "0.1", value: String(Number(user.quota_bytes || 0) / 1073741824) });
-      const save = h("button", { class: "button tonal", text: "调整", onclick: async () => {
-        const value = Number(input.value);
-        if (!Number.isFinite(value) || value < 0) return showToast("请输入有效额度", true);
-        try { await api("/api/storage/admin/quotas/" + user.id, { method: "PATCH", body: { quotaBytes: Math.round(value * 1073741824), reason: "管理员调整" } }); await loadQuotas(); showToast("额度已更新"); } catch (error) { showToast(error.message, true); }
+      const quotaInput = h("input", { type: "number", min: "0", step: "0.1", value: String(Number(user.quota_bytes || 0) / 1073741824) });
+      const trafficInput = h("input", { type: "number", min: "0", step: "0.1", max: "900", value: String(Number(user.daily_relay_bytes || 0) / 1073741824) });
+      const requestsInput = h("input", { type: "number", min: "0", step: "1", value: String(Number(user.daily_relay_requests || 0)) });
+      const save = h("button", { class: "button tonal", text: "保存额度", onclick: async () => {
+        const quotaGiB = Number(quotaInput.value);
+        const trafficGiB = Number(trafficInput.value);
+        const requests = Number(requestsInput.value);
+        if (![quotaGiB, trafficGiB, requests].every(value => Number.isFinite(value) && value >= 0)) return showToast("请输入有效额度", true);
+        const restore = setBusy(save, "保存中…");
+        try {
+          await api("/api/storage/admin/quotas/" + user.id, { method: "PATCH", body: {
+            quotaBytes: Math.round(quotaGiB * 1073741824),
+            dailyRelayBytes: Math.round(trafficGiB * 1073741824),
+            dailyRelayRequests: Math.round(requests),
+            reason: "管理员调整"
+          } });
+          await loadQuotas();
+          showToast("成员额度已更新");
+        } catch (error) { showToast(error.message, true); }
+        finally { restore(); }
       }});
       quotaList.append(h("div", { class: "list-item" },
-        h("div", { class: "row between" }, h("div", null, h("strong", { text: user.id === "owner" ? "admin" : (user.display_name || user.email) }), h("div", { class: "muted tiny", text: user.id === "owner" ? "站主" : user.email })), h("span", { class: "pill", text: formatBytes(user.used_bytes) + " / " + formatBytes(user.quota_bytes) })),
-        h("div", { class: "row", style: "margin-top:10px" }, input, h("span", { text: "GiB" }), save)
+        h("div", { class: "row between" },
+          h("div", null, h("strong", { text: user.id === "owner" ? "admin" : (user.display_name || user.email) }), h("div", { class: "muted tiny", text: user.id === "owner" ? "站主" : user.email })),
+          h("span", { class: "pill", text: formatBytes(user.used_bytes) + " / " + formatBytes(user.quota_bytes) })
+        ),
+        h("div", { class: "muted tiny", text: "今日中转 " + formatBytes(user.relay_bytes_today) + " / " + formatBytes(user.daily_relay_bytes) + " · 请求 " + Number(user.relay_requests_today || 0) + " / " + Number(user.daily_relay_requests || 0) + " · 文件 " + Number(user.file_count || 0) }),
+        h("div", { class: "row", style: "margin-top:10px" }, quotaInput, h("span", { text: "GiB 容量" })),
+        h("div", { class: "row", style: "margin-top:10px" }, trafficInput, h("span", { text: "GiB/日中转" })),
+        h("div", { class: "row", style: "margin-top:10px" }, requestsInput, h("span", { text: "次/日" }), save)
       ));
     }
   }
@@ -452,6 +539,7 @@ async function renderStorageAdmin(sections) {
     const status = await api("/api/storage/status");
     clear(driveBox);
     driveBox.append(h("div", { class: "row" }, h("span", { class: "pill " + (status.connected ? "success" : ""), text: status.connected ? "已连接" : status.configured ? "等待连接" : "未配置" })));
+    if (status.provider?.limit) driveBox.append(h("div", { class: "callout", text: "Google 账户：" + formatBytes(status.provider.usage) + " / " + formatBytes(status.provider.limit) + "；LMS 全站上限 " + formatBytes(status.global?.quotaBytes) + "。" }));
     const configForm = h("form", null,
       field("OAuth Client ID", "clientId", "text", "...apps.googleusercontent.com", true),
       field("OAuth Client Secret", "clientSecret", "password", "仅在保存时提交", true),
