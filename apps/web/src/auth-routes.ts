@@ -10,6 +10,7 @@ import {
   sessionCookie,
   verifierProof
 } from './auth';
+import { consumeAuthChallenge, storeAuthChallenge } from './auth-challenge';
 import { HttpError, json, readJson } from './http';
 import { constantTimeEqual, rateLimit, requireCsrf } from './security';
 
@@ -68,7 +69,15 @@ export async function authRoutes(request: Request, env: Env, path: string): Prom
     const challenge = randomToken(32);
     const challengeId = randomToken(18);
     const mode = user?.credential_box ? 'login' : 'register';
-    await env.CACHE.put(`auth:challenge:${challengeId}`, JSON.stringify({ email, salt, iterations, challenge, mode }), { expirationTtl: 300 });
+    await storeAuthChallenge(env, {
+      id: challengeId,
+      kind: 'member',
+      principal: email,
+      salt,
+      iterations,
+      challenge,
+      mode
+    });
     return json({ challengeId, challenge, salt, iterations, mode });
   }
 
@@ -81,20 +90,17 @@ export async function authRoutes(request: Request, env: Env, path: string): Prom
     const challengeId = text(body.challengeId);
     const proof = text(body.proof);
     if (!/^[A-Za-z0-9_-]{20,80}$/.test(challengeId) || !/^[A-Za-z0-9_-]{43}$/.test(proof)) throw new HttpError(400, 'valid login challenge required');
-    const challengeKey = `auth:challenge:${challengeId}`;
-    const challengeValue = await env.CACHE.get(challengeKey);
-    await env.CACHE.delete(challengeKey);
-    if (!challengeValue) throw new HttpError(403, 'login challenge expired or already used');
-    let challenge: { email: string; salt: string; iterations: number; challenge: string; mode: string };
-    try { challenge = JSON.parse(challengeValue) as typeof challenge; }
-    catch { throw new HttpError(403, 'invalid login challenge'); }
-    if (challenge.email !== email) throw new HttpError(403, 'login challenge does not match account');
+    const challenge = await consumeAuthChallenge(env, challengeId, 'member', email);
 
     let user = await findUser(env, email);
     if (user?.status === 'disabled') throw new HttpError(403, 'account disabled');
     if (user?.credential_box) {
       const verifier = await openVerifier(user.credential_box, env);
       if (!verifier || !constantTimeEqual(await verifierProof(verifier, challenge.challenge), proof)) throw new HttpError(403, 'invalid credentials');
+      if (env.CREDENTIAL_SECRET && env.CREDENTIAL_SECRET.length >= 32) {
+        const migratedBox = await sealVerifier(verifier, env);
+        await env.DB.prepare('UPDATE users SET credential_box = ?1 WHERE id = ?2').bind(migratedBox, user.id).run();
+      }
     } else {
       if (!env.INVITE_CODE) throw new HttpError(503, 'registration is disabled until INVITE_CODE is configured');
       const inviteCode = text(body.inviteCode);
