@@ -110,19 +110,29 @@ assert.doesNotMatch(admin, /json\([^\n]*CF_API_TOKEN|json\([^\n]*OWNER_PASSWORD|
 assert.match(ui, /data-theme="system"/, 'the shell must support a system-aware theme');
 assert.match(ui, /prefers-color-scheme:dark/, 'dark mode must follow the OS when using system mode');
 assert.match(ui, /UI_ASSET_VERSION/, 'HTML must version its CSS and JS URLs so deployments cannot mix assets');
-assert.match(ui, /navigation-drawer/, 'expanded layouts need a stable navigation drawer rather than offset arithmetic');
+assert.match(ui, /<html[^>]*style="--seed:/, 'the Material palette seed must live on the root element');
+assert.match(ui, /var\(--seed/, 'surface accents must actually derive from the configured seed');
+assert.match(ui, /navigation-rail/, 'expanded layouts need a compact navigation rail');
 assert.match(ui, /bottom-navigation/, 'compact layouts need touch-first navigation');
-assert.match(ui, /\*\[hidden\]\{display:none!important\}/, 'the hidden attribute must not be overridden by component display rules');
-assert.match(ui, /font-size:16px/, 'base text and controls must stay readable and avoid mobile form zoom');
-assert.match(ui, /grid-template-columns:248px minmax\(0,1fr\)/, 'desktop layout must use a real grid rather than margin offsets');
+assert.match(ui, /\*\[hidden\]\{display:none!important\}/, 'the hidden attribute must not be overridden by ordinary component rules');
+assert.match(ui, /font-size:16px/, 'base text and form controls must stay readable and avoid mobile form zoom');
+assert.match(ui, /grid-template-columns:88px minmax\(0,1fr\)/, 'expanded layout must reserve a compact rail without margin arithmetic');
+assert.match(ui, /min-width:320px/, 'the shell must define a supported minimum viewport');
+assert.doesNotMatch(ui, /grid-template-columns:248px/, 'the old oversized desktop drawer must not return');
+assert.doesNotMatch(ui, /backdrop-filter/, 'core navigation must not depend on expensive blur effects');
+assert.doesNotMatch(ui, /@keyframes shimmer|animation:shimmer/, 'loading states must not waste render budget on decorative shimmer');
 assert.doesNotMatch(ui, /margin-left:max\(/, 'desktop content positioning must not use fragile rail-offset arithmetic');
 assert.doesNotMatch(ui, /font-size:(?:9|10)px/, 'primary UI text must not be rendered at unreadably small sizes');
 assert.doesNotMatch(ui, /Cloudflare edge|Durable Objects|SCOPED TOKEN|OWNER ONLY|INBOX \/ R2|MIRROR_TARGETS|Custom Domain|PBKDF2/, 'implementation details must not be used as public product copy');
 
-assert.match(authClient, /await api\("\/api\/auth\/challenge"/, 'every login submission must obtain a fresh challenge');
+assert.match(authClient, /await api\("\/api\/auth\/challenge"/, 'every login attempt must obtain a fresh challenge');
 assert.doesNotMatch(authClient, /let pending|pending\.challenge/, 'the login page must not reuse stale challenges while a user fills registration details');
+assert.match(authClient, /challengeRetryable/, 'expired one-time challenges must be recognized explicitly');
+assert.match(authClient, /正在自动重试/, 'the client must recover once from an expired challenge without another user action');
 assert.match(authClient, /await api\("\/api\/auth\/session"\)/, 'login success must be verified by reading the cookie-backed session before redirecting');
-assert.match(authClient, /clearLegacyCaches/, 'login must actively remove stale shell caches left by older deployments');
+assert.match(authClient, /clearLegacyCaches\(\);/, 'legacy cache cleanup should run in the background rather than blocking login rendering');
+assert.doesNotMatch(authClient, /await clearLegacyCaches\(\)/, 'cache cleanup must not block the login page');
+assert.match(authClient, /identifier\?\.addEventListener\("input", resetRegistration\)/, 'changing the identifier must leave stale registration mode');
 assert.match(authClient, /registration\.hidden/, 'first-time registration must stay progressive rather than cluttering normal login');
 assert.doesNotMatch(authClient, /window\.confirm|\bconfirm\(/, 'login must not use native blocking dialogs');
 
