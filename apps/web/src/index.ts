@@ -16,6 +16,8 @@ import { storageRoutes } from './storage';
 import { APP_CSS, appPage } from './ui';
 
 const ALLOWED_HOSTS = new Set(['lunarlab.uk', '20100823.xyz']);
+const MIRROR_RUNTIME_PATH = '/__cfone_runtime__.js';
+const MIRROR_REWRITE_LIMIT = 6 * 1024 * 1024;
 const PAGE_FEATURES: Record<string, Feature> = {
   files: 'files', tools: 'tools', mail: 'mail', mirror: 'mirror', store: 'store', admin: 'admin'
 };
@@ -29,10 +31,128 @@ function icon(accent: string): Response {
   return asset(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="118" fill="#f3edf7"/><circle cx="256" cy="256" r="154" fill="${safe}" opacity=".2"/><circle cx="256" cy="256" r="112" fill="${safe}"/><circle cx="306" cy="214" r="92" fill="#f3edf7"/></svg>`, 'image/svg+xml', 'public, max-age=3600');
 }
 
+function mirrorRuntimeScript(upstreamOrigin: string): string {
+  const origin = JSON.stringify(upstreamOrigin);
+  return `(()=>{\n` +
+    `  const upstream=new URL(${origin});\n` +
+    `  const real=window.location;\n` +
+    `  const upstreamHref=()=>upstream.origin+real.pathname+real.search+real.hash;\n` +
+    `  const mapNavigation=value=>{\n` +
+    `    try{\n` +
+    `      const target=new URL(String(value),upstreamHref());\n` +
+    `      if(target.origin===upstream.origin)return real.origin+target.pathname+target.search+target.hash;\n` +
+    `      return target.href;\n` +
+    `    }catch{return String(value);}\n` +
+    `  };\n` +
+    `  const virtual={\n` +
+    `    get origin(){return upstream.origin},\n` +
+    `    get protocol(){return upstream.protocol},\n` +
+    `    get hostname(){return upstream.hostname},\n` +
+    `    get host(){return upstream.host},\n` +
+    `    get port(){return upstream.port},\n` +
+    `    get href(){return upstreamHref()},\n` +
+    `    set href(value){real.href=mapNavigation(value)},\n` +
+    `    assign(value){real.assign(mapNavigation(value))},\n` +
+    `    replace(value){real.replace(mapNavigation(value))},\n` +
+    `    reload(){real.reload()},\n` +
+    `    toString(){return upstreamHref()},\n` +
+    `    valueOf(){return upstreamHref()}\n` +
+    `  };\n` +
+    `  Object.defineProperty(globalThis,'__cfoneVirtualLocation',{value:virtual,writable:false,configurable:false});\n` +
+    `})();`;
+}
+
+function rewriteMirrorJavaScript(source: string): string {
+  const helper = 'globalThis.__cfoneVirtualLocation';
+  let output = source.replace(
+    /\b(?:window|globalThis|self|document)\.location\.(origin|hostname|host|protocol|port|href)\b/g,
+    (_match, property: string) => `${helper}.${property}`
+  );
+  output = output.replace(
+    /(^|[^A-Za-z0-9_$.])location\.(origin|hostname|host|protocol|port|href)\b/g,
+    (_match, prefix: string, property: string) => `${prefix}${helper}.${property}`
+  );
+  return output;
+}
+
+function htmlAttribute(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function injectMirrorRuntime(htmlText: string): string {
+  const firstScript = /<script\b([^>]*)>/i;
+  if (firstScript.test(htmlText)) {
+    return htmlText.replace(firstScript, (tag, attributes: string) => {
+      const nonce = attributes.match(/\bnonce\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+      const nonceValue = nonce?.[1] ?? nonce?.[2] ?? nonce?.[3] ?? '';
+      const nonceAttribute = nonceValue ? ` nonce="${htmlAttribute(nonceValue)}"` : '';
+      return `<script src="${MIRROR_RUNTIME_PATH}" data-cf-one-runtime="1"${nonceAttribute}></script>${tag}`;
+    });
+  }
+  return htmlText.replace(/<head\b[^>]*>/i, tag => `${tag}<script src="${MIRROR_RUNTIME_PATH}" data-cf-one-runtime="1"></script>`);
+}
+
+function rewriteMirrorHtml(htmlText: string): string {
+  let output = htmlText.replace(/(<script\b[^>]*>)([\s\S]*?)(<\/script>)/gi, (whole, open: string, body: string, close: string) => {
+    if (/\bsrc\s*=/i.test(open)) return whole;
+    return `${open}${rewriteMirrorJavaScript(body)}${close}`;
+  });
+  output = injectMirrorRuntime(output);
+  return output;
+}
+
+function rewrittenMirrorResponse(response: Response, body: string): Response {
+  const headers = new Headers(response.headers);
+  headers.delete('content-length');
+  headers.delete('content-encoding');
+  headers.delete('etag');
+  headers.delete('content-md5');
+  headers.delete('digest');
+  return new Response(body, { status: response.status, statusText: response.statusText, headers });
+}
+
+async function mirrorRuntimeRoute(request: Request, env: Env, hostname: string): Promise<Response> {
+  if (!['GET', 'HEAD'].includes(request.method)) throw new HttpError(405, 'mirror runtime only supports GET and HEAD');
+  const row = await env.DB.prepare(`SELECT slug, origin FROM mirror_targets
+    WHERE lower(hostname) = ?1 AND state = 'active'`).bind(hostname.toLowerCase()).first<{ slug: string; origin: string }>();
+  if (!row) throw new HttpError(404, 'mirror not found');
+  let upstream: URL;
+  try { upstream = new URL(row.origin); }
+  catch { throw new HttpError(500, 'mirror origin is invalid'); }
+  if (upstream.protocol !== 'https:' || upstream.username || upstream.password) throw new HttpError(500, 'mirror origin is invalid');
+  const headers = new Headers({
+    'content-type': 'text/javascript; charset=utf-8',
+    'cache-control': 'private, no-store',
+    'x-cf-one-mirror': row.slug
+  });
+  const body = request.method === 'HEAD' ? null : mirrorRuntimeScript(upstream.origin);
+  return new Response(body, { headers });
+}
+
+async function mirrorCompatibilityRoute(request: Request, env: Env, hostname: string): Promise<Response> {
+  const incoming = new URL(request.url);
+  if (incoming.pathname === MIRROR_RUNTIME_PATH) return mirrorRuntimeRoute(request, env, hostname);
+
+  const response = await mirrorHostRoute(request, env, hostname);
+  if (request.method === 'HEAD' || !response.body) return response;
+
+  const type = (response.headers.get('content-type') ?? '').toLowerCase();
+  const length = Number(response.headers.get('content-length') ?? 0);
+  if (Number.isFinite(length) && length > MIRROR_REWRITE_LIMIT) return response;
+
+  if (type.includes('text/html')) {
+    return rewrittenMirrorResponse(response, rewriteMirrorHtml(await response.text()));
+  }
+  if (type.includes('javascript') || type.includes('ecmascript')) {
+    return rewrittenMirrorResponse(response, rewriteMirrorJavaScript(await response.text()));
+  }
+  return response;
+}
+
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const host = url.hostname.toLowerCase();
-  if (isMirrorHostname(host)) return mirrorHostRoute(request, env, host);
+  if (isMirrorHostname(host)) return mirrorCompatibilityRoute(request, env, host);
   if (!ALLOWED_HOSTS.has(host)) throw new HttpError(421, 'host is not served here');
 
   const path = url.pathname.replace(/\/{2,}/g, '/');
