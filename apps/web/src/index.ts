@@ -13,6 +13,7 @@ import { ownerAuthRoutes } from './owner';
 import { requireSameOrigin } from './security';
 import { guardStorageRequest } from './storage-guard';
 import { storageRoutes } from './storage';
+import { createTestRoute } from './test-create';
 import { testStudioRoutes } from './test-studio';
 import { TEST_RUNNER_JS, TEST_STUDIO_JS, testDirectoryPage, testRunPage, testStudioPage } from './test-pages';
 import { APP_CSS, appPage } from './ui';
@@ -103,6 +104,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     },
     async () => { if (!path.startsWith('/api/mail/')) return null; requireFeature(profile, 'mail'); return mailRoutes(request, env, path); },
     async () => { if (!path.startsWith('/api/mirror/')) return null; requireFeature(profile, 'mirror'); return mirrorApiRoutes(request, env, path); },
+    async () => { if (path !== '/api/test') return null; return createTestRoute(request, env, path); },
     async () => { if (!path.startsWith('/api/test/')) return null; return testStudioRoutes(request, env, path); },
     async () => { if (!path.startsWith('/api/admin/')) return null; requireFeature(profile, 'admin'); return adminRoutes(request, env, path); }
   ];
