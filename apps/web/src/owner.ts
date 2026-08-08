@@ -1,5 +1,6 @@
 import type { Env } from './env';
 import { assertSessionSecret, issueSession, readSession, sessionCookie, verifierProof } from './auth';
+import { consumeAuthChallenge, storeAuthChallenge } from './auth-challenge';
 import { HttpError, json, readJson } from './http';
 import { constantTimeEqual, rateLimit } from './security';
 
@@ -59,7 +60,15 @@ export async function ownerAuthRoutes(request: Request, env: Env, path: string):
     const salt = await ownerSalt(env);
     const challenge = base64url(crypto.getRandomValues(new Uint8Array(32)));
     const challengeId = base64url(crypto.getRandomValues(new Uint8Array(18)));
-    await env.CACHE.put(`owner:challenge:${challengeId}`, challenge, { expirationTtl: 300 });
+    await storeAuthChallenge(env, {
+      id: challengeId,
+      kind: 'owner',
+      principal: OWNER_USERNAME,
+      salt,
+      iterations: OWNER_ITERATIONS,
+      challenge,
+      mode: 'login'
+    });
     return json({ challengeId, challenge, salt, iterations: OWNER_ITERATIONS, mode: 'login' });
   }
 
@@ -74,12 +83,9 @@ export async function ownerAuthRoutes(request: Request, env: Env, path: string):
     if (!/^[A-Za-z0-9_-]{24}$/.test(challengeId) || !/^[A-Za-z0-9_-]{43}$/.test(proof)) {
       throw new HttpError(400, 'valid owner login challenge required');
     }
-    const key = `owner:challenge:${challengeId}`;
-    const challenge = await env.CACHE.get(key);
-    await env.CACHE.delete(key);
-    if (!challenge) throw new HttpError(403, 'owner login challenge expired or already used');
-    const verifier = await ownerVerifier(env, await ownerSalt(env));
-    const expected = await verifierProof(verifier, challenge);
+    const stored = await consumeAuthChallenge(env, challengeId, 'owner', OWNER_USERNAME);
+    const verifier = await ownerVerifier(env, stored.salt);
+    const expected = await verifierProof(verifier, stored.challenge);
     if (!constantTimeEqual(expected, proof)) throw new HttpError(403, 'invalid owner credentials');
 
     await ensureOwnerUser(env);
