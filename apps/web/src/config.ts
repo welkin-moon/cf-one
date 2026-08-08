@@ -15,15 +15,15 @@ export interface SiteProfile {
 const DEFAULTS: Record<string, Omit<SiteProfile, 'host'>> = {
   'lunarlab.uk': {
     name: 'Lunar Lab',
-    eyebrow: 'LUNAR EDGE WORKSPACE',
-    tagline: '导航、朋友聊天、动态、邮件与边缘工具，都收在同一片月光里。',
+    eyebrow: '你的私人空间',
+    tagline: '聊天、动态、工具、邮件和更多日常功能，都收在一个地方。',
     accent: '#a78bfa',
     features: ['chat', 'social', 'tools', 'mail', 'mirror', 'admin', 'store']
   },
   '20100823.xyz': {
     name: '20100823',
-    eyebrow: 'PERSONAL INDEX',
-    tagline: '一个更轻、更私人的入口：导航、实用工具与可安装网页应用。',
+    eyebrow: '个人主页',
+    tagline: '一个安静、轻量的私人入口，放常用工具和应用。',
     accent: '#67e8f9',
     features: ['tools', 'store', 'admin']
   }
@@ -40,7 +40,7 @@ export function siteProfile(request: Request, env: Env): SiteProfile {
   try {
     overrides = JSON.parse(env.SITE_CONFIG || '{}') as Record<string, Partial<SiteProfile>>;
   } catch {
-    throw new HttpError(500, 'SITE_CONFIG is invalid JSON');
+    throw new HttpError(500, 'site configuration is invalid');
   }
   const selected = overrides[host] ?? {};
   return {
