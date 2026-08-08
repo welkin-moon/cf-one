@@ -173,11 +173,11 @@ export async function testStudioRoutes(request: Request, env: Env, path: string)
   }
 
   const itemMatch = path.match(/^\/api\/test\/([0-9a-f-]{36})$/i);
-  if (itemMatch && request.method === 'GET') return json({ test: ownedTest(await owned(env, session, itemMatch[1])) });
+  if (itemMatch && request.method === 'GET') return json({ test: ownedTest(await owned(env, session, itemMatch[1]!)) });
 
   if (itemMatch && request.method === 'PATCH') {
     requireCsrf(request, session);
-    const existing = await owned(env, session, itemMatch[1]);
+    const existing = await owned(env, session, itemMatch[1]!);
     const body = await readJson<Record<string, unknown>>(request);
     const title = body.title === undefined ? existing.title : text(body.title, 120);
     if (!title) throw new HttpError(400, 'title is required');
@@ -198,14 +198,14 @@ export async function testStudioRoutes(request: Request, env: Env, path: string)
 
   if (itemMatch && request.method === 'DELETE') {
     requireCsrf(request, session);
-    await owned(env, session, itemMatch[1]);
+    await owned(env, session, itemMatch[1]!);
     await env.DB.prepare('DELETE FROM tests WHERE id=?1 AND owner_id=?2').bind(itemMatch[1], session.sub).run();
     return json({ ok: true });
   }
 
   const statsMatch = path.match(/^\/api\/test\/([0-9a-f-]{36})\/stats$/i);
   if (statsMatch && request.method === 'GET') {
-    const test = await owned(env, session, statsMatch[1]);
+    const test = await owned(env, session, statsMatch[1]!);
     const [visits, responses, results, recent] = await Promise.all([
       env.DB.prepare(`SELECT COUNT(*) visitors, SUM(started) started, SUM(completed) completed FROM test_visits WHERE test_id=?1`).bind(test.id).first<Record<string, number>>(),
       env.DB.prepare(`SELECT COUNT(*) responses, AVG(score) avg_score FROM test_responses WHERE test_id=?1`).bind(test.id).first<Record<string, number>>(),
