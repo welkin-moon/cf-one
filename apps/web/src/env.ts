@@ -5,6 +5,7 @@ export interface Env {
   EMAIL?: EmailSender;
   APP_NAME: string;
   SESSION_SECRET: string;
+  CREDENTIAL_SECRET?: string;
   INVITE_CODE: string;
   OWNER_USERNAME: string;
   OWNER_PASSWORD: string;
