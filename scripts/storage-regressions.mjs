@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const read = relative => readFile(path.join(root, relative), 'utf8');
+const [migration, storage, config, index, ui, client] = await Promise.all([
+  read('apps/web/migrations/0009_google_drive_storage.sql'),
+  read('apps/web/src/storage.ts'),
+  read('apps/web/src/config.ts'),
+  read('apps/web/src/index.ts'),
+  read('apps/web/src/ui.ts'),
+  read('apps/web/src/client.ts')
+]);
+
+assert.match(migration, /default_quota_bytes INTEGER NOT NULL DEFAULT 10737418240/, 'new users need a finite default quota');
+assert.match(migration, /CREATE TABLE IF NOT EXISTS user_storage_quotas/, 'per-user quota overrides must be stored in D1');
+assert.match(migration, /CREATE TABLE IF NOT EXISTS storage_uploads/, 'in-flight uploads must reserve quota');
+assert.match(migration, /CREATE TABLE IF NOT EXISTS storage_oauth_states/, 'OAuth state must be server-side and expiring');
+assert.match(migration, /client_secret_box/, 'the Google OAuth client secret must be encrypted at rest');
+
+assert.match(storage, /https:\/\/www\.googleapis\.com\/auth\/drive\.file/, 'Google Drive must use the narrow drive.file scope');
+assert.doesNotMatch(storage, /auth\/drive['"]/, 'full-drive OAuth scope must not be requested');
+assert.match(storage, /access_type:\s*'offline'/, 'Drive connection must request offline access');
+assert.match(storage, /prompt:\s*'consent'/, 'Drive reconnect must be able to obtain a refresh token');
+assert.match(storage, /DELETE FROM storage_oauth_states[\s\S]*RETURNING state/, 'OAuth state must be consumed exactly once');
+assert.match(storage, /sealStorage\(clientSecret/, 'OAuth client secrets must be encrypted before D1 persistence');
+assert.match(storage, /sealStorage\(refreshToken/, 'refresh tokens must be encrypted before D1 persistence');
+assert.doesNotMatch(storage, /console\.(?:log|error|warn)\([^\n]*(?:access_token|refresh_token|client_secret|authorization)/i, 'Google credentials must never be logged');
+assert.doesNotMatch(storage, /[?&]access_token=/, 'download URLs must never expose OAuth access tokens');
+
+assert.match(storage, /storage quota exceeded; contact an administrator/, 'quota failures must require administrator handling');
+assert.match(storage, /INSERT INTO storage_uploads[\s\S]*SUM\(byte_size\)[\s\S]*SUM\(total_bytes\)/, 'quota reservation must include stored and in-flight bytes atomically');
+assert.match(storage, /DEFAULT_CHUNK_BYTES = 8 \* 1024 \* 1024/, 'browser uploads must use bounded chunks');
+assert.match(storage, /GOOGLE_CHUNK_UNIT = 256 \* 1024/, 'non-final Drive chunks must respect Google resumable-upload alignment');
+assert.match(storage, /uploadType=resumable/, 'uploads must use Drive resumable sessions');
+assert.match(storage, /content-range/, 'resumable upload chunks must carry Content-Range');
+
+assert.match(storage, /\?alt=media/, 'Worker downloads must use Drive media download');
+assert.match(storage, /for \(const name of \['range', 'if-range'/, 'Worker relay must preserve byte-range download semantics');
+assert.match(storage, /via === 'google'/, 'users must be able to choose Google-direct downloads');
+assert.match(storage, /drive\.google\.com\/uc\?export=download/, 'direct mode must hand off to Google without credentials');
+assert.match(storage, /via !== 'worker'/, 'Worker relay must be an explicit transfer mode');
+
+assert.doesNotMatch(config, /'chat'|'social'/, 'OpenX chat/social features must not be activatable in LMS');
+assert.doesNotMatch(index, /api\/chat|api\/social/, 'OpenX APIs must not be mounted in LMS');
+assert.doesNotMatch(ui, /\/app\/chat|\/app\/social|聊天|动态/, 'OpenX product surfaces must not remain in LMS navigation or copy');
+assert.doesNotMatch(client, /renderChat|renderSocial|\/api\/chat|\/api\/social/, 'OpenX client implementation must not ship in the LMS bundle');
+assert.match(config, /'files'/, 'files must be a first-class LMS feature');
+assert.match(index, /storageRoutes/, 'storage API must be mounted through the files feature');
+assert.match(client, /\/api\/storage\/uploads/, 'the file UI must use the resumable storage API');
+assert.match(client, /lms-drive-route/, 'the user must be able to remember a preferred transfer path');
+
+console.log('Storage regressions passed.');
