@@ -1,7 +1,7 @@
 import type { Env } from './env';
 import { HttpError } from './http';
 
-export type Feature = 'chat' | 'social' | 'tools' | 'mail' | 'mirror' | 'admin' | 'store';
+export type Feature = 'tools' | 'files' | 'mail' | 'mirror' | 'admin' | 'store';
 
 export interface SiteProfile {
   host: string;
@@ -16,9 +16,9 @@ const DEFAULTS: Record<string, Omit<SiteProfile, 'host'>> = {
   'lunarlab.uk': {
     name: 'Lunar Lab',
     eyebrow: '你的私人空间',
-    tagline: '工具、邮件、镜像和常用应用，都收在一个地方。',
+    tagline: '文件、工具、邮件、镜像和常用应用，都收在一个地方。',
     accent: '#a78bfa',
-    features: ['tools', 'mail', 'mirror', 'admin', 'store']
+    features: ['files', 'tools', 'mail', 'mirror', 'admin', 'store']
   },
   '20100823.xyz': {
     name: '20100823',
@@ -30,9 +30,7 @@ const DEFAULTS: Record<string, Omit<SiteProfile, 'host'>> = {
 };
 
 function isFeature(value: unknown): value is Feature {
-  // Chat/social belong to the future OpenX project and are deliberately not
-  // activatable through SITE_CONFIG in this application.
-  return typeof value === 'string' && ['tools', 'mail', 'mirror', 'admin', 'store'].includes(value);
+  return typeof value === 'string' && ['tools', 'files', 'mail', 'mirror', 'admin', 'store'].includes(value);
 }
 
 export function siteProfile(request: Request, env: Env): SiteProfile {
