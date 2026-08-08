@@ -19,6 +19,8 @@ import { TEST_RUNNER_JS, TEST_STUDIO_JS, testDirectoryPage, testRunPage, testStu
 import { APP_CSS, appPage } from './ui';
 
 const ALLOWED_HOSTS = new Set(['lunarlab.uk', '20100823.xyz']);
+const MIRROR_RUNTIME_PATH = '/__cfone_runtime__.js';
+const MIRROR_REWRITE_LIMIT = 6 * 1024 * 1024;
 const PAGE_FEATURES: Record<string, Feature> = {
   files: 'files', tools: 'tools', mail: 'mail', mirror: 'mirror', store: 'store', admin: 'admin'
 };
@@ -37,10 +39,146 @@ function homeWithTest(body: string): string {
   return body.replace('</section><footer class="site-footer">', `${card}</section><footer class="site-footer">`);
 }
 
+function mirrorRuntimeScript(upstreamOrigin: string): string {
+  const origin = JSON.stringify(upstreamOrigin);
+  return `(()=>{\n` +
+    `  const upstream=new URL(${origin});\n` +
+    `  const real=window.location;\n` +
+    `  const root=document.documentElement;\n` +
+    `  const encode=value=>{try{const bytes=new TextEncoder().encode(JSON.stringify(value));let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);return btoa(binary)}catch{return ''}};\n` +
+    `  const record=(name,value)=>{const encoded=encode(value);if(encoded)root.setAttribute(name,encoded.slice(0,1800))};\n` +
+    `  root.setAttribute('data-cf-one-runtime-ready','1');\n` +
+    `  const upstreamHref=()=>upstream.origin+real.pathname+real.search+real.hash;\n` +
+    `  const mapNavigation=value=>{\n` +
+    `    try{\n` +
+    `      const target=new URL(String(value),upstreamHref());\n` +
+    `      if(target.origin===upstream.origin)return real.origin+target.pathname+target.search+target.hash;\n` +
+    `      return target.href;\n` +
+    `    }catch{return String(value);}\n` +
+    `  };\n` +
+    `  const virtual={\n` +
+    `    get origin(){return upstream.origin},\n` +
+    `    get protocol(){return upstream.protocol},\n` +
+    `    get hostname(){return upstream.hostname},\n` +
+    `    get host(){return upstream.host},\n` +
+    `    get port(){return upstream.port},\n` +
+    `    get href(){return upstreamHref()},\n` +
+    `    set href(value){real.href=mapNavigation(value)},\n` +
+    `    assign(value){real.assign(mapNavigation(value))},\n` +
+    `    replace(value){real.replace(mapNavigation(value))},\n` +
+    `    reload(){real.reload()},\n` +
+    `    toString(){return upstreamHref()},\n` +
+    `    valueOf(){return upstreamHref()}\n` +
+    `  };\n` +
+    `  Object.defineProperty(globalThis,'__cfoneVirtualLocation',{value:virtual,writable:false,configurable:false});\n` +
+    `  addEventListener('error',event=>record('data-cf-one-error',{message:String(event.message||event.error?.message||'error').slice(0,320),file:String(event.filename||'').split('/').pop(),line:event.lineno||0,column:event.colno||0}),true);\n` +
+    `  addEventListener('unhandledrejection',event=>record('data-cf-one-rejection',{name:String(event.reason?.name||''),reason:String(event.reason?.message||event.reason||'rejection').slice(0,420)}),true);\n` +
+    `  const probeLogin=()=>{\n` +
+    `    const input=document.querySelector('input[autocomplete*="username"],input[type="email"],input[name*="user" i]');\n` +
+    `    if(!input){record('data-cf-one-login-probe',{found:false});return}\n` +
+    `    const style=getComputedStyle(input);const rect=input.getBoundingClientRect();let hiddenAncestor=null;\n` +
+    `    for(let node=input,depth=0;node&&node.nodeType===1&&depth<10;node=node.parentElement,depth++){\n` +
+    `      const current=getComputedStyle(node);\n` +
+    `      if(node.hidden||node.getAttribute('aria-hidden')==='true'||current.display==='none'||current.visibility==='hidden'||Number(current.opacity)===0){hiddenAncestor={depth,tag:node.tagName,display:current.display,visibility:current.visibility,opacity:current.opacity,hidden:Boolean(node.hidden),ariaHidden:node.getAttribute('aria-hidden')};break}\n` +
+    `    }\n` +
+    `    record('data-cf-one-login-probe',{found:true,display:style.display,visibility:style.visibility,opacity:style.opacity,pointerEvents:style.pointerEvents,disabled:Boolean(input.disabled),hidden:Boolean(input.hidden),ariaHidden:input.getAttribute('aria-hidden'),rect:{x:Math.round(rect.x),y:Math.round(rect.y),width:Math.round(rect.width),height:Math.round(rect.height)},hiddenAncestor});\n` +
+    `  };\n` +
+    `  document.addEventListener('DOMContentLoaded',()=>{probeLogin();setTimeout(probeLogin,1000);setTimeout(probeLogin,3000);setTimeout(probeLogin,7000)},{once:true});\n` +
+    `  addEventListener('load',probeLogin,{once:true});\n` +
+    `})();`;
+}
+
+function rewriteMirrorJavaScript(source: string): string {
+  const helper = 'globalThis.__cfoneVirtualLocation';
+  let output = source.replace(
+    /\b(?:window|globalThis|self|document)\.location\.(origin|hostname|host|protocol|port|href)\b/g,
+    (_match, property: string) => `${helper}.${property}`
+  );
+  output = output.replace(
+    /(^|[^A-Za-z0-9_$.])location\.(origin|hostname|host|protocol|port|href)\b/g,
+    (_match, prefix: string, property: string) => `${prefix}${helper}.${property}`
+  );
+  return output;
+}
+
+function htmlAttribute(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function injectMirrorRuntime(htmlText: string): string {
+  const firstScript = /<script\b([^>]*)>/i;
+  if (firstScript.test(htmlText)) {
+    return htmlText.replace(firstScript, (tag, attributes: string) => {
+      const nonce = attributes.match(/\bnonce\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+      const nonceValue = nonce?.[1] ?? nonce?.[2] ?? nonce?.[3] ?? '';
+      const nonceAttribute = nonceValue ? ` nonce="${htmlAttribute(nonceValue)}"` : '';
+      return `<script src="${MIRROR_RUNTIME_PATH}" data-cf-one-runtime="1"${nonceAttribute}></script>${tag}`;
+    });
+  }
+  return htmlText.replace(/<head\b[^>]*>/i, tag => `${tag}<script src="${MIRROR_RUNTIME_PATH}" data-cf-one-runtime="1"></script>`);
+}
+
+function rewriteMirrorHtml(htmlText: string): string {
+  let output = htmlText.replace(/(<script\b[^>]*>)([\s\S]*?)(<\/script>)/gi, (whole, open: string, body: string, close: string) => {
+    if (/\bsrc\s*=/i.test(open)) return whole;
+    return `${open}${rewriteMirrorJavaScript(body)}${close}`;
+  });
+  output = injectMirrorRuntime(output);
+  return output;
+}
+
+function rewrittenMirrorResponse(response: Response, body: string): Response {
+  const headers = new Headers(response.headers);
+  headers.delete('content-length');
+  headers.delete('content-encoding');
+  headers.delete('etag');
+  headers.delete('content-md5');
+  headers.delete('digest');
+  return new Response(body, { status: response.status, statusText: response.statusText, headers });
+}
+
+async function mirrorRuntimeRoute(request: Request, env: Env, hostname: string): Promise<Response> {
+  if (!['GET', 'HEAD'].includes(request.method)) throw new HttpError(405, 'mirror runtime only supports GET and HEAD');
+  const row = await env.DB.prepare(`SELECT slug, origin FROM mirror_targets
+    WHERE lower(hostname) = ?1 AND state = 'active'`).bind(hostname.toLowerCase()).first<{ slug: string; origin: string }>();
+  if (!row) throw new HttpError(404, 'mirror not found');
+  let upstream: URL;
+  try { upstream = new URL(row.origin); }
+  catch { throw new HttpError(500, 'mirror origin is invalid'); }
+  if (upstream.protocol !== 'https:' || upstream.username || upstream.password) throw new HttpError(500, 'mirror origin is invalid');
+  const headers = new Headers({
+    'content-type': 'text/javascript; charset=utf-8',
+    'cache-control': 'private, no-store',
+    'x-cf-one-mirror': row.slug
+  });
+  const body = request.method === 'HEAD' ? null : mirrorRuntimeScript(upstream.origin);
+  return new Response(body, { headers });
+}
+
+async function mirrorCompatibilityRoute(request: Request, env: Env, hostname: string): Promise<Response> {
+  const incoming = new URL(request.url);
+  if (incoming.pathname === MIRROR_RUNTIME_PATH) return mirrorRuntimeRoute(request, env, hostname);
+
+  const response = await mirrorHostRoute(request, env, hostname);
+  if (request.method === 'HEAD' || !response.body) return response;
+
+  const type = (response.headers.get('content-type') ?? '').toLowerCase();
+  const length = Number(response.headers.get('content-length') ?? 0);
+  if (Number.isFinite(length) && length > MIRROR_REWRITE_LIMIT) return response;
+
+  if (type.includes('text/html')) {
+    return rewrittenMirrorResponse(response, rewriteMirrorHtml(await response.text()));
+  }
+  if (type.includes('javascript') || type.includes('ecmascript')) {
+    return rewrittenMirrorResponse(response, rewriteMirrorJavaScript(await response.text()));
+  }
+  return response;
+}
+
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const host = url.hostname.toLowerCase();
-  if (isMirrorHostname(host)) return mirrorHostRoute(request, env, host);
+  if (isMirrorHostname(host)) return mirrorCompatibilityRoute(request, env, host);
   if (!ALLOWED_HOSTS.has(host)) throw new HttpError(421, 'host is not served here');
 
   const path = url.pathname.replace(/\/{2,}/g, '/');
