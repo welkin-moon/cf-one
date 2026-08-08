@@ -8,7 +8,7 @@
     "cf:provision": "node scripts/provision-cloudflare.mjs",
     "cf:deploy": "pnpm check && node scripts/deploy-cloudflare.mjs",
     "typecheck": "pnpm --dir apps/web typecheck",
-    "test:security": "node scripts/security-regressions.mjs",
+    "test:security": "node scripts/security-regressions.mjs && node scripts/storage-regressions.mjs",
     "check": "pnpm test:security && pnpm typecheck && pnpm --dir apps/web dry-run",
     "db:migrate:local": "pnpm --dir apps/web db:migrate:local",
     "db:migrate:remote": "pnpm --dir apps/web db:migrate:remote"
