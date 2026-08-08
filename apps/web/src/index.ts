@@ -4,7 +4,7 @@ import { authRoutes } from './auth-routes';
 import { AUTH_JS } from './auth-client';
 import { APP_JS } from './client';
 import { requireFeature, siteProfile, type Feature } from './config';
-import { chatRoutes, socialRoutes, toolsRoutes } from './features';
+import { toolsRoutes } from './features';
 import { HttpError, html, json, withSecurityHeaders } from './http';
 import { mailRoutes, receiveEmail } from './mail';
 import { isMirrorHostname, mirrorApiRoutes } from './mirror';
@@ -15,7 +15,7 @@ import { APP_CSS, appPage } from './ui';
 
 const ALLOWED_HOSTS = new Set(['lunarlab.uk', '20100823.xyz']);
 const PAGE_FEATURES: Record<string, Feature> = {
-  chat: 'chat', social: 'social', tools: 'tools', mail: 'mail', mirror: 'mirror', store: 'store', admin: 'admin'
+  tools: 'tools', mail: 'mail', mirror: 'mirror', store: 'store', admin: 'admin'
 };
 
 function asset(body: string, type: string, cache = 'no-store'): Response {
@@ -80,8 +80,6 @@ async function route(request: Request, env: Env): Promise<Response> {
       return owner ?? authRoutes(request, env, path);
     },
     async () => { if (!path.startsWith('/api/tools/')) return null; requireFeature(profile, 'tools'); return toolsRoutes(request, path); },
-    async () => { if (!path.startsWith('/api/chat/')) return null; requireFeature(profile, 'chat'); return chatRoutes(request, env, path); },
-    async () => { if (!path.startsWith('/api/social/')) return null; requireFeature(profile, 'social'); return socialRoutes(request, env, path); },
     async () => { if (!path.startsWith('/api/mail/')) return null; requireFeature(profile, 'mail'); return mailRoutes(request, env, path); },
     async () => { if (!path.startsWith('/api/mirror/')) return null; requireFeature(profile, 'mirror'); return mirrorApiRoutes(request, env, path); },
     async () => { if (!path.startsWith('/api/admin/')) return null; requireFeature(profile, 'admin'); return adminRoutes(request, env, path); }
