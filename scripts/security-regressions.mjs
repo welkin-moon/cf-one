@@ -72,7 +72,12 @@ assert.match(mirror, /const MIRROR_ZONE = '20100823\.xyz'/);
 assert.match(mirror, /const MIRROR_SERVICE = 'cf-one-apex'/);
 assert.match(mirror, /\^m\[1-9\]\[0-9\]\*\\\.20100823\\\.xyz\$/i, 'only numbered mN mirror hostnames may enter the mirror host path');
 assert.match(mirror, /workers\/domains/, 'mirror provisioning must use exact Worker Custom Domains');
-assert.match(mirror, /dns_records\?name=/, 'mirror allocation must refuse existing DNS names instead of overwriting them');
+assert.match(mirror, /allocateAndAttach/, 'mirror allocation must atomically allocate then attach an exact hostname');
+assert.doesNotMatch(mirror, /\/zones\?name=|dns_records\?name=/, 'mirror allocation must not require broad zone or DNS read permissions');
+assert.match(mirror, /domainConflict/, 'provider-side hostname conflicts must be skipped without overwriting existing names');
+assert.match(mirror, /detachDomainById/, 'failed persistence must be able to compensate by detaching the just-created domain');
+assert.match(mirror, /mirror\.domain-provider/, 'provider failures need server-side diagnostics');
+assert.doesNotMatch(mirror, /console\.error\([^\n]*(?:CF_API_TOKEN|authorization|Bearer)/i, 'provider diagnostics must never log credentials');
 assert.doesNotMatch(mirror, /\*\.20100823\.xyz|pattern.*\*/, 'mirror provisioning must never create a wildcard route');
 
 assert.match(admin, /ownerOnly\(session\)/, 'infrastructure and role management must enforce the owner boundary');
