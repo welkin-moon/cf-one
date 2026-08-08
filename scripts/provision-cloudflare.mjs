@@ -79,6 +79,7 @@ const config = {
   name: workerName,
   main: 'src/index.ts',
   compatibility_date: '2026-07-21',
+  compatibility_flags: ['global_fetch_strictly_public'],
   workers_dev: false,
   keep_vars: true,
   routes: domains.map(pattern => ({ pattern, custom_domain: true })),
