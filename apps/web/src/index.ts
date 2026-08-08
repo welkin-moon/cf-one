@@ -11,6 +11,7 @@ import { isMirrorHostname, mirrorApiRoutes, mirrorHostRoute } from './mirror';
 import { ownerAuthRoutes } from './owner';
 import { requireSameOrigin } from './security';
 import { APP_CSS, appPage } from './ui-v2';
+import { APP_CSS_READABILITY } from './ui-readability';
 
 const ALLOWED_HOSTS = new Set(['lunarlab.uk', '20100823.xyz']);
 const PAGE_FEATURES: Record<string, Feature> = {
@@ -36,7 +37,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   const profile = siteProfile(request, env);
   requireSameOrigin(request);
 
-  if (path === '/assets/app.css' && request.method === 'GET') return asset(APP_CSS, 'text/css; charset=utf-8');
+  if (path === '/assets/app.css' && request.method === 'GET') return asset(`${APP_CSS}\n${APP_CSS_READABILITY}`, 'text/css; charset=utf-8');
   if (path === '/assets/app.js' && request.method === 'GET') return asset(APP_JS, 'text/javascript; charset=utf-8');
   if (path === '/assets/auth.js' && request.method === 'GET') return asset(AUTH_JS, 'text/javascript; charset=utf-8');
   if (path === '/icon.svg' && request.method === 'GET') return icon(profile.accent);
