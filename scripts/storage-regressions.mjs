@@ -5,14 +5,18 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = relative => readFile(path.join(root, relative), 'utf8');
-const [migration, guardMigration, storage, config, index, ui, client] = await Promise.all([
+const [migration, guardMigration, storage, storageGuard, config, index, ui, client, env, wrangler, provision] = await Promise.all([
   read('apps/web/migrations/0009_google_drive_storage.sql'),
   read('apps/web/migrations/0010_storage_guardrails.sql'),
   read('apps/web/src/storage.ts'),
+  read('apps/web/src/storage-guard.ts'),
   read('apps/web/src/config.ts'),
   read('apps/web/src/index.ts'),
   read('apps/web/src/ui.ts'),
-  read('apps/web/src/client.ts')
+  read('apps/web/src/client.ts'),
+  read('apps/web/src/env.ts'),
+  read('apps/web/wrangler.toml'),
+  read('scripts/provision-cloudflare.mjs')
 ]);
 
 assert.match(migration, /default_quota_bytes INTEGER NOT NULL DEFAULT 10737418240/, 'new users need a finite default quota');
@@ -61,6 +65,18 @@ assert.match(storage, /total_daily_relay_requests/, 'global relay request counts
 assert.match(storage, /refundTrafficBytes/, 'failed upstream transfers must not permanently consume byte quota');
 assert.doesNotMatch(storage, /CACHE\.(?:get|put|delete)/, 'storage traffic accounting must not amplify KV writes');
 assert.match(storage, /MAX_DAILY_RELAY_BYTES = 900 \* 1024 \* 1024 \* 1024/, 'admin policy must keep a hard ceiling below the Drive API 1 TB/day egress threshold');
+
+assert.match(storageGuard, /readSession\(request, env\)/, 'the burst gate must authenticate a signed session without querying D1');
+assert.match(storageGuard, /STORAGE_USER_RATE_LIMITER\.limit/, 'storage requests need a per-user burst limiter');
+assert.match(storageGuard, /STORAGE_GLOBAL_RATE_LIMITER\.limit/, 'storage requests need a global burst limiter');
+assert.doesNotMatch(storageGuard, /\.DB\.|\.CACHE\./, 'the burst gate must not consume D1 or KV quota');
+assert.match(index, /guardStorageRequest\(request, env\)[\s\S]*storageRoutes\(request, env, path\)/, 'storage burst limiting must happen before storage SQL/API routing');
+assert.match(env, /STORAGE_USER_RATE_LIMITER: RateLimiterBinding/, 'Worker env needs the per-user rate limiter binding');
+assert.match(env, /STORAGE_GLOBAL_RATE_LIMITER: RateLimiterBinding/, 'Worker env needs the global rate limiter binding');
+assert.match(wrangler, /name = "STORAGE_USER_RATE_LIMITER"[\s\S]*limit = 180[\s\S]*period = 60/, 'checked-in config needs a finite per-user burst limit');
+assert.match(wrangler, /name = "STORAGE_GLOBAL_RATE_LIMITER"[\s\S]*limit = 3000[\s\S]*period = 60/, 'checked-in config needs a finite global burst limit');
+assert.match(provision, /STORAGE_USER_RATE_LIMITER[\s\S]*2010082301[\s\S]*limit: 180, period: 60/, 'generated production config must preserve the per-user rate limiter');
+assert.match(provision, /STORAGE_GLOBAL_RATE_LIMITER[\s\S]*2010082302[\s\S]*limit: 3000, period: 60/, 'generated production config must preserve the global rate limiter');
 
 assert.match(storage, /\?alt=media/, 'Worker downloads must use Drive media download');
 assert.match(storage, /for \(const name of \['range', 'if-range'/, 'Worker relay must preserve byte-range download semantics');
