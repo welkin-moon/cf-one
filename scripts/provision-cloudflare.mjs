@@ -41,7 +41,7 @@ async function ensureKv(title) {
   const existing = await api(`/accounts/${accountId}/storage/kv/namespaces?per_page=100&order=title&direction=asc&page=1`);
   const found = Array.isArray(existing) ? existing.find(namespace => namespace.title === title) : null;
   if (found) return found.id;
-  const created = await api(`/accounts/${accountId}/storage/kv/namespaces`, { method: 'POST', body: JSON.stringify({ name: title }) });
+  const created = await api(`/accounts/${accountId}/storage/kv/namespaces`, { method: 'POST', body: JSON.stringify({ title }) });
   if (!created?.id) throw new Error('Cloudflare created KV but did not return its ID.');
   return created.id;
 }
