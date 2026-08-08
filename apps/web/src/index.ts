@@ -58,15 +58,12 @@ function mirrorRuntimeScript(upstreamOrigin: string): string {
     `  };\n` +
     `  const virtual={\n` +
     `    get origin(){return upstream.origin},\n` +
-    `    get protocol(){return upstream.protocol},set protocol(value){const target=new URL(upstreamHref());target.protocol=String(value);real.href=mapNavigation(target.href)},\n` +
-    `    get hostname(){return upstream.hostname},set hostname(value){const target=new URL(upstreamHref());target.hostname=String(value);real.href=mapNavigation(target.href)},\n` +
-    `    get host(){return upstream.host},set host(value){const target=new URL(upstreamHref());target.host=String(value);real.href=mapNavigation(target.href)},\n` +
-    `    get port(){return upstream.port},set port(value){const target=new URL(upstreamHref());target.port=String(value);real.href=mapNavigation(target.href)},\n` +
-    `    get pathname(){return real.pathname},set pathname(value){real.pathname=String(value)},\n` +
-    `    get search(){return real.search},set search(value){real.search=String(value)},\n` +
-    `    get hash(){return real.hash},set hash(value){real.hash=String(value)},\n` +
-    `    get ancestorOrigins(){return real.ancestorOrigins},\n` +
-    `    get href(){return upstreamHref()},set href(value){real.href=mapNavigation(value)},\n` +
+    `    get protocol(){return upstream.protocol},\n` +
+    `    get hostname(){return upstream.hostname},\n` +
+    `    get host(){return upstream.host},\n` +
+    `    get port(){return upstream.port},\n` +
+    `    get href(){return upstreamHref()},\n` +
+    `    set href(value){real.href=mapNavigation(value)},\n` +
     `    assign(value){real.assign(mapNavigation(value))},\n` +
     `    replace(value){real.replace(mapNavigation(value))},\n` +
     `    reload(){real.reload()},\n` +
@@ -74,10 +71,6 @@ function mirrorRuntimeScript(upstreamOrigin: string): string {
     `    valueOf(){return upstreamHref()}\n` +
     `  };\n` +
     `  Object.defineProperty(globalThis,'__cfoneVirtualLocation',{value:virtual,writable:false,configurable:false});\n` +
-    `  try{Object.defineProperty(globalThis,'origin',{get:()=>upstream.origin,configurable:true})}catch{}\n` +
-    `  try{Object.defineProperty(document,'URL',{get:upstreamHref,configurable:true})}catch{}\n` +
-    `  try{Object.defineProperty(document,'documentURI',{get:upstreamHref,configurable:true})}catch{}\n` +
-    `  try{Object.defineProperty(document,'baseURI',{get:upstreamHref,configurable:true})}catch{}\n` +
     `  addEventListener('error',event=>record('data-cf-one-error',{message:String(event.message||event.error?.message||'error').slice(0,320),file:String(event.filename||'').split('/').pop(),line:event.lineno||0,column:event.colno||0}),true);\n` +
     `  addEventListener('unhandledrejection',event=>record('data-cf-one-rejection',{name:String(event.reason?.name||''),reason:String(event.reason?.message||event.reason||'rejection').slice(0,420)}),true);\n` +
     `  const probeLogin=()=>{\n` +
@@ -98,20 +91,12 @@ function mirrorRuntimeScript(upstreamOrigin: string): string {
 function rewriteMirrorJavaScript(source: string): string {
   const helper = 'globalThis.__cfoneVirtualLocation';
   let output = source.replace(
-    /\b(?:window|globalThis|self|document|top|parent)\.location\b(?!\s*=)/g,
-    helper
+    /\b(?:window|globalThis|self|document)\.location\.(origin|hostname|host|protocol|port|href)\b/g,
+    (_match, property: string) => `${helper}.${property}`
   );
   output = output.replace(
-    /(^|[^A-Za-z0-9_$.])location\.(origin|hostname|host|protocol|port|pathname|search|hash|href|ancestorOrigins|assign|replace|reload|toString)\b/g,
+    /(^|[^A-Za-z0-9_$.])location\.(origin|hostname|host|protocol|port|href)\b/g,
     (_match, prefix: string, property: string) => `${prefix}${helper}.${property}`
-  );
-  output = output.replace(
-    /\bString\(\s*location\s*\)/g,
-    `String(${helper})`
-  );
-  output = output.replace(
-    /\bnew\s+URL\(\s*location\s*\)/g,
-    `new URL(${helper})`
   );
   return output;
 }
