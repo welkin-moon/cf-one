@@ -20,6 +20,10 @@ const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoute
   read('apps/web/src/client.ts')
 ]);
 
+const clientSource = client.match(/export const APP_JS = String\.raw`([\s\S]*)`;\s*$/)?.[1];
+assert.ok(clientSource, 'client.ts must expose one static APP_JS template');
+assert.doesNotThrow(() => new Function(clientSource), 'the JavaScript sent to browsers must parse successfully');
+
 assert.match(wrangler, /workers_dev\s*=\s*false/, 'workers.dev must stay disabled');
 assert.match(wrangler, /keep_vars\s*=\s*true/, 'dashboard variables must survive deploys');
 assert.equal((wrangler.match(/custom_domain\s*=\s*true/g) ?? []).length, 2, 'exactly two static custom domains are allowed');
