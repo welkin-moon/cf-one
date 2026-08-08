@@ -164,19 +164,31 @@ async function logMirrorClientResponse(request: Request, response: Response, pat
     status: response.status,
     contentType: contentType.split(';')[0],
     requestCookieCount: cookieCount(request.headers.get('cookie')),
-    setCookieCount: setCookieCount(response.headers)
+    setCookieCount: setCookieCount(response.headers),
+    hasCfMitigated: response.headers.has('cf-mitigated'),
+    hasWwwAuthenticate: response.headers.has('www-authenticate'),
+    hasRetryAfter: response.headers.has('retry-after'),
+    hasLocation: response.headers.has('location')
   };
   const declaredLength = Number(response.headers.get('content-length') ?? 0);
   const readable = response.body && (!Number.isFinite(declaredLength) || declaredLength <= 1_000_000) &&
-    (contentType.includes('json') || contentType.includes('text/html') || contentType.includes('text/plain'));
+    (response.status >= 400 || contentType.includes('json') || contentType.includes('text/html') || contentType.includes('text/plain'));
   if (readable) {
     try {
       const text = await response.clone().text();
+      const lower = text.toLowerCase();
       summary.bytes = text.length;
       summary.relayRefs = (text.match(/__cfone_origin__/g) ?? []).length;
       summary.hasEmailLabel = text.includes('Email or username');
       summary.hasContinuePhone = text.includes('Continue with phone');
-      if (contentType.includes('json')) {
+      summary.looksHtml = /^\s*<!doctype\s+html|^\s*<html\b/i.test(text);
+      summary.looksJson = /^\s*[\[{]/.test(text);
+      summary.mentionsChallenge = /challenge|captcha|turnstile/.test(lower);
+      summary.mentionsBot = /\bbot\b|automation|automated/.test(lower);
+      summary.mentionsForbidden = /forbidden|access denied|not allowed/.test(lower);
+      summary.mentionsAuth = /unauthori[sz]ed|authentication|authorization|guest[_ -]?token|csrf/.test(lower);
+      summary.mentionsRateLimit = /rate.?limit|too many requests/.test(lower);
+      if (contentType.includes('json') || /^\s*[\[{]/.test(text)) {
         try {
           const parsed: unknown = JSON.parse(text);
           if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
