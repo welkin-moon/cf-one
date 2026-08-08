@@ -9,14 +9,19 @@ const SECURITY_HEADERS: Record<string, string> = {
   'x-frame-options': 'DENY'
 };
 
+const TEST_SANDBOX_CSP = "default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-src about:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'";
+
 export function withSecurityHeaders(response: Response): Response {
   const headers = new Headers(response.headers);
   const isMirror = headers.has('x-cf-one-mirror');
+  const isTestSandbox = headers.has('x-cf-one-test-sandbox');
+  headers.delete('x-cf-one-test-sandbox');
   if (isMirror) {
     headers.set('strict-transport-security', 'max-age=31536000');
     headers.set('x-content-type-options', 'nosniff');
   } else {
     for (const [key, value] of Object.entries(SECURITY_HEADERS)) headers.set(key, value);
+    if (isTestSandbox) headers.set('content-security-policy', TEST_SANDBOX_CSP);
   }
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
@@ -28,8 +33,11 @@ export function json(data: unknown, status = 200, headers?: HeadersInit): Respon
   return new Response(JSON.stringify(data), { status, headers: output });
 }
 
-export function html(body: string, status = 200): Response {
-  return new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
+export function html(body: string, status = 200, headers?: HeadersInit): Response {
+  const output = new Headers(headers);
+  if (!output.has('content-type')) output.set('content-type', 'text/html; charset=utf-8');
+  output.set('cache-control', 'no-store');
+  return new Response(body, { status, headers: output });
 }
 
 export async function readJson<T extends object>(request: Request): Promise<T> {
