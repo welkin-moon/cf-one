@@ -36,6 +36,10 @@ function mirrorRuntimeScript(upstreamOrigin: string): string {
   return `(()=>{\n` +
     `  const upstream=new URL(${origin});\n` +
     `  const real=window.location;\n` +
+    `  const root=document.documentElement;\n` +
+    `  const encode=value=>{try{const bytes=new TextEncoder().encode(JSON.stringify(value));let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);return btoa(binary)}catch{return ''}};\n` +
+    `  const record=(name,value)=>{const encoded=encode(value);if(encoded)root.setAttribute(name,encoded.slice(0,1800))};\n` +
+    `  root.setAttribute('data-cf-one-runtime-ready','1');\n` +
     `  const upstreamHref=()=>upstream.origin+real.pathname+real.search+real.hash;\n` +
     `  const mapNavigation=value=>{\n` +
     `    try{\n` +
@@ -59,6 +63,20 @@ function mirrorRuntimeScript(upstreamOrigin: string): string {
     `    valueOf(){return upstreamHref()}\n` +
     `  };\n` +
     `  Object.defineProperty(globalThis,'__cfoneVirtualLocation',{value:virtual,writable:false,configurable:false});\n` +
+    `  addEventListener('error',event=>record('data-cf-one-error',{message:String(event.message||event.error?.message||'error').slice(0,320),file:String(event.filename||'').split('/').pop(),line:event.lineno||0,column:event.colno||0}),true);\n` +
+    `  addEventListener('unhandledrejection',event=>record('data-cf-one-rejection',{name:String(event.reason?.name||''),reason:String(event.reason?.message||event.reason||'rejection').slice(0,420)}),true);\n` +
+    `  const probeLogin=()=>{\n` +
+    `    const input=document.querySelector('input[autocomplete*="username"],input[type="email"],input[name*="user" i]');\n` +
+    `    if(!input){record('data-cf-one-login-probe',{found:false});return}\n` +
+    `    const style=getComputedStyle(input);const rect=input.getBoundingClientRect();let hiddenAncestor=null;\n` +
+    `    for(let node=input,depth=0;node&&node.nodeType===1&&depth<10;node=node.parentElement,depth++){\n` +
+    `      const current=getComputedStyle(node);\n` +
+    `      if(node.hidden||node.getAttribute('aria-hidden')==='true'||current.display==='none'||current.visibility==='hidden'||Number(current.opacity)===0){hiddenAncestor={depth,tag:node.tagName,display:current.display,visibility:current.visibility,opacity:current.opacity,hidden:Boolean(node.hidden),ariaHidden:node.getAttribute('aria-hidden')};break}\n` +
+    `    }\n` +
+    `    record('data-cf-one-login-probe',{found:true,display:style.display,visibility:style.visibility,opacity:style.opacity,pointerEvents:style.pointerEvents,disabled:Boolean(input.disabled),hidden:Boolean(input.hidden),ariaHidden:input.getAttribute('aria-hidden'),rect:{x:Math.round(rect.x),y:Math.round(rect.y),width:Math.round(rect.width),height:Math.round(rect.height)},hiddenAncestor});\n` +
+    `  };\n` +
+    `  document.addEventListener('DOMContentLoaded',()=>{probeLogin();setTimeout(probeLogin,1000);setTimeout(probeLogin,3000);setTimeout(probeLogin,7000)},{once:true});\n` +
+    `  addEventListener('load',probeLogin,{once:true});\n` +
     `})();`;
 }
 
