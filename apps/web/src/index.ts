@@ -11,6 +11,7 @@ import { isMirrorHostname, mirrorApiRoutes } from './mirror';
 import { mirrorHostRoute } from './mirror-host';
 import { ownerAuthRoutes } from './owner';
 import { requireSameOrigin } from './security';
+import { guardStorageRequest } from './storage-guard';
 import { storageRoutes } from './storage';
 import { APP_CSS, appPage } from './ui';
 
@@ -81,7 +82,12 @@ async function route(request: Request, env: Env): Promise<Response> {
       return owner ?? authRoutes(request, env, path);
     },
     async () => { if (!path.startsWith('/api/tools/')) return null; requireFeature(profile, 'tools'); return toolsRoutes(request, path); },
-    async () => { if (!path.startsWith('/api/storage/')) return null; requireFeature(profile, 'files'); return storageRoutes(request, env, path); },
+    async () => {
+      if (!path.startsWith('/api/storage/')) return null;
+      requireFeature(profile, 'files');
+      await guardStorageRequest(request, env);
+      return storageRoutes(request, env, path);
+    },
     async () => { if (!path.startsWith('/api/mail/')) return null; requireFeature(profile, 'mail'); return mailRoutes(request, env, path); },
     async () => { if (!path.startsWith('/api/mirror/')) return null; requireFeature(profile, 'mirror'); return mirrorApiRoutes(request, env, path); },
     async () => { if (!path.startsWith('/api/admin/')) return null; requireFeature(profile, 'admin'); return adminRoutes(request, env, path); }
