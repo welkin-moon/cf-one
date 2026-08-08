@@ -35,9 +35,14 @@ interface WorkerDomain {
   service: string;
 }
 
-interface ZoneRecord {
-  id: string;
-  name: string;
+class CloudflareDomainError extends Error {
+  constructor(
+    readonly upstreamStatus: number,
+    readonly codes: number[],
+    readonly messages: string[]
+  ) {
+    super('mirror domain provider request failed');
+  }
 }
 
 function forbiddenHost(hostname: string): boolean {
@@ -73,15 +78,25 @@ function account(env: Env): string {
   return env.CF_ACCOUNT_ID;
 }
 
-async function cloudflare<T>(env: Env, path: string, init: RequestInit = {}): Promise<T> {
-  if (!env.CF_API_TOKEN) throw new HttpError(503, 'mirror provisioning token is not configured');
+function safeProviderMessages(errors: CloudflareEnvelope<unknown>['errors']): string[] {
+  return (errors ?? []).map(error => String(error.message ?? '').replace(/[\r\n\t]+/g, ' ').slice(0, 180)).filter(Boolean).slice(0, 4);
+}
+
+async function cloudflare<T>(env: Env, operation: string, path: string, init: RequestInit = {}): Promise<T> {
+  const token = env.CF_API_TOKEN?.trim();
+  if (!token) throw new HttpError(503, 'mirror provisioning token is not configured');
   const headers = new Headers(init.headers);
-  headers.set('authorization', `Bearer ${env.CF_API_TOKEN}`);
+  headers.set('authorization', `Bearer ${token}`);
   headers.set('accept', 'application/json');
   if (init.body) headers.set('content-type', 'application/json');
   const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, { ...init, headers });
-  const body = await response.json<CloudflareEnvelope<T>>().catch(() => ({ success: false, result: null as T }));
-  if (!response.ok || !body.success) throw new HttpError(502, 'Cloudflare mirror-domain operation failed');
+  const body = await response.json<CloudflareEnvelope<T>>().catch(() => ({ success: false, result: null as T, errors: [] }));
+  if (!response.ok || !body.success) {
+    const codes = (body.errors ?? []).map(error => error.code).filter((code): code is number => Number.isFinite(code));
+    const messages = safeProviderMessages(body.errors);
+    console.error('mirror.domain-provider', JSON.stringify({ operation, status: response.status, codes, messages }));
+    throw new CloudflareDomainError(response.status, codes, messages);
+  }
   return body.result;
 }
 
@@ -93,46 +108,71 @@ async function nextSequence(env: Env): Promise<number> {
   return row.value;
 }
 
-async function hostnameAvailable(env: Env, hostname: string): Promise<boolean> {
-  const encoded = encodeURIComponent(hostname);
-  const domains = await cloudflare<WorkerDomain[]>(env, `/accounts/${account(env)}/workers/domains?hostname=${encoded}`);
-  if (domains.length) return false;
-  const zones = await cloudflare<ZoneRecord[]>(env, `/zones?name=${encodeURIComponent(MIRROR_ZONE)}&per_page=1`);
-  const zone = zones[0];
-  if (!zone) throw new HttpError(503, 'mirror zone is unavailable');
-  const records = await cloudflare<Array<{ id: string }>>(env, `/zones/${zone.id}/dns_records?name=${encoded}&per_page=1`);
-  return records.length === 0;
+function domainConflict(error: unknown): boolean {
+  if (!(error instanceof CloudflareDomainError)) return false;
+  if (error.upstreamStatus === 409) return true;
+  if (error.upstreamStatus !== 400 && error.upstreamStatus !== 422) return false;
+  const text = error.messages.join(' ').toLowerCase();
+  return /already|exists|in use|dns record|cname|hostname.+(?:taken|used|conflict)/.test(text);
 }
 
-async function allocateHostname(env: Env): Promise<{ sequence: number; hostname: string }> {
+function publicProviderError(error: unknown): HttpError {
+  if (!(error instanceof CloudflareDomainError)) return error instanceof HttpError ? error : new HttpError(502, 'mirror domain operation failed');
+  if (error.upstreamStatus === 401 || error.upstreamStatus === 403) return new HttpError(503, 'mirror domain access is not configured');
+  if (error.upstreamStatus === 429) return new HttpError(503, 'mirror domain service is busy');
+  return new HttpError(502, 'mirror domain operation failed');
+}
+
+async function attachDomain(env: Env, hostname: string): Promise<string> {
+  const result = await cloudflare<WorkerDomain>(env, 'attach', `/accounts/${account(env)}/workers/domains`, {
+    method: 'PUT',
+    body: JSON.stringify({ hostname, service: MIRROR_SERVICE })
+  });
+  if (!result?.id) throw new HttpError(502, 'mirror domain id was not returned');
+  return result.id;
+}
+
+async function detachDomainById(env: Env, domainId: string): Promise<void> {
+  await cloudflare<unknown>(env, 'detach', `/accounts/${account(env)}/workers/domains/${domainId}`, { method: 'DELETE' });
+}
+
+async function allocateAndAttach(env: Env): Promise<{ sequence: number; hostname: string; domainId: string }> {
   for (let attempt = 0; attempt < 32; attempt++) {
     const sequence = await nextSequence(env);
     const hostname = `m${sequence}.${MIRROR_ZONE}`;
-    const local = await env.DB.prepare('SELECT 1 AS occupied FROM mirror_targets WHERE hostname = ?1').bind(hostname).first();
+    const local = await env.DB.prepare('SELECT 1 AS occupied FROM mirror_targets WHERE lower(hostname) = ?1').bind(hostname.toLowerCase()).first();
     if (local) continue;
-    if (await hostnameAvailable(env, hostname)) return { sequence, hostname };
+    try {
+      const domainId = await attachDomain(env, hostname);
+      return { sequence, hostname, domainId };
+    } catch (error) {
+      if (domainConflict(error)) continue;
+      throw publicProviderError(error);
+    }
   }
   throw new HttpError(503, 'could not allocate an unused mirror hostname');
 }
 
-async function attachDomain(env: Env, hostname: string): Promise<string> {
-  const result = await cloudflare<WorkerDomain>(env, `/accounts/${account(env)}/workers/domains`, {
-    method: 'PUT',
-    body: JSON.stringify({ hostname, service: MIRROR_SERVICE })
-  });
-  if (!result?.id) throw new HttpError(502, 'Cloudflare did not return a mirror domain id');
-  return result.id;
+async function detachDomain(env: Env, row: MirrorRow): Promise<void> {
+  if (row.domain_id) {
+    try { await detachDomainById(env, row.domain_id); }
+    catch (error) { throw publicProviderError(error); }
+    return;
+  }
+  try {
+    const domains = await cloudflare<WorkerDomain[]>(env, 'lookup-detach', `/accounts/${account(env)}/workers/domains?hostname=${encodeURIComponent(row.hostname)}`);
+    const owned = domains.find(domain => domain.hostname.toLowerCase() === row.hostname.toLowerCase() && domain.service === MIRROR_SERVICE);
+    if (owned?.id) await detachDomainById(env, owned.id);
+  } catch (error) {
+    throw publicProviderError(error);
+  }
 }
 
-async function detachDomain(env: Env, row: MirrorRow): Promise<void> {
-  let domainId = row.domain_id;
-  if (!domainId) {
-    const domains = await cloudflare<WorkerDomain[]>(env, `/accounts/${account(env)}/workers/domains?hostname=${encodeURIComponent(row.hostname)}`);
-    const owned = domains.find(domain => domain.hostname.toLowerCase() === row.hostname.toLowerCase() && domain.service === MIRROR_SERVICE);
-    domainId = owned?.id ?? null;
-  }
-  if (!domainId) return;
-  await cloudflare<unknown>(env, `/accounts/${account(env)}/workers/domains/${domainId}`, { method: 'DELETE' });
+function timestampIso(value: number | null): string | null {
+  if (!value || !Number.isFinite(value)) return null;
+  const milliseconds = value > 10_000_000_000 ? value : value * 1000;
+  const date = new Date(milliseconds);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function publicMirror(row: MirrorRow): Record<string, unknown> {
@@ -143,9 +183,9 @@ function publicMirror(row: MirrorRow): Record<string, unknown> {
     origin: row.origin,
     label: row.label,
     state: row.state,
-    createdAt: new Date(row.created_at * 1000).toISOString(),
-    approvedAt: row.approved_at ? new Date(row.approved_at * 1000).toISOString() : null,
-    lastAccessAt: row.last_access_at ? new Date(row.last_access_at * 1000).toISOString() : null
+    createdAt: timestampIso(row.created_at),
+    approvedAt: timestampIso(row.approved_at),
+    lastAccessAt: timestampIso(row.last_access_at)
   };
 }
 
@@ -180,21 +220,25 @@ export async function mirrorApiRoutes(request: Request, env: Env, path: string):
     const body = await readJson<{ origin?: unknown; label?: unknown }>(request);
     const origin = validateOrigin(body.origin);
     const label = typeof body.label === 'string' && body.label.trim() ? body.label.trim().slice(0, 80) : origin.hostname;
-    const allocation = await allocateHostname(env);
+    const allocation = await allocateAndAttach(env);
     const id = crypto.randomUUID();
     const now = Math.floor(Date.now() / 1000);
-    await env.DB.prepare(`INSERT INTO mirror_targets
-      (id, owner_id, slug, hostname, origin, origin_host, label, state, auto_approved, decision_note, created_at)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', 1, '', ?8)`)
-      .bind(id, session.sub, `m${allocation.sequence}`, allocation.hostname, origin.origin, origin.hostname, label, now).run();
     try {
-      const domainId = await attachDomain(env, allocation.hostname);
-      await env.DB.prepare(`UPDATE mirror_targets SET state = 'active', domain_id = ?1, approved_at = ?2 WHERE id = ?3`)
-        .bind(domainId, now, id).run();
+      await env.DB.prepare(`INSERT INTO mirror_targets
+        (id, owner_id, slug, hostname, origin, origin_host, label, state, domain_id, auto_approved, decision_note, created_at, approved_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'active', ?8, 1, '', ?9, ?9)`)
+        .bind(id, session.sub, `m${allocation.sequence}`, allocation.hostname, origin.origin, origin.hostname, label, allocation.domainId, now).run();
       await env.DB.prepare('INSERT INTO audit_log (actor_id, action, target) VALUES (?1, ?2, ?3)')
         .bind(session.sub, 'mirror.create', allocation.hostname).run();
     } catch (error) {
-      await env.DB.prepare(`UPDATE mirror_targets SET state = 'rejected', decision_note = 'Cloudflare domain provisioning failed' WHERE id = ?1`).bind(id).run();
+      try { await detachDomainById(env, allocation.domainId); }
+      catch (cleanupError) {
+        if (cleanupError instanceof CloudflareDomainError) {
+          console.error('mirror.domain-cleanup', JSON.stringify({ status: cleanupError.upstreamStatus, codes: cleanupError.codes, messages: cleanupError.messages }));
+        } else {
+          console.error('mirror.domain-cleanup', 'unexpected cleanup failure');
+        }
+      }
       throw error;
     }
     const row = await env.DB.prepare(`SELECT id, owner_id, slug, hostname, origin, origin_host, label, state, domain_id, created_at, approved_at, last_access_at
