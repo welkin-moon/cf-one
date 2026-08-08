@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = relative => readFile(path.join(root, relative), 'utf8');
 
-const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoutes] = await Promise.all([
+const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoutes, ui, client] = await Promise.all([
   read('apps/web/wrangler.toml'),
   read('scripts/provision-cloudflare.mjs'),
   read('apps/web/src/index.ts'),
@@ -15,7 +15,9 @@ const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoute
   read('scripts/deploy-cloudflare.mjs'),
   read('apps/web/src/mirror.ts'),
   read('apps/web/src/admin-routes.ts'),
-  read('apps/web/src/auth-routes.ts')
+  read('apps/web/src/auth-routes.ts'),
+  read('apps/web/src/ui.ts'),
+  read('apps/web/src/client.ts')
 ]);
 
 assert.match(wrangler, /workers_dev\s*=\s*false/, 'workers.dev must stay disabled');
@@ -39,6 +41,9 @@ assert.match(index, /request\.clone\(\) as unknown as Request/, 'owner probing m
 assert.match(index, /ownerAuthRoutes\(ownerRequest, env, path\)/, 'owner probing must not consume the member request body');
 assert.match(index, /isMirrorHostname\(host\)/, 'mirror hosts must go through the dedicated D1-backed proxy path');
 assert.doesNotMatch(index, /endsWith\(['"]\.20100823\.xyz/, 'homepage routing must never broadly accept arbitrary subdomains');
+assert.match(index, /return asset\(APP_JS, 'text\/javascript; charset=utf-8'\)/, 'the browser must receive the checked-in client source directly');
+assert.doesNotMatch(index, /MIRROR_CLIENT|ownerAware|mirrorAware|APP_JS\s*\.replace/, 'request-time source rewriting is forbidden');
+assert.match(index, /path === '\/healthz'[\s\S]*?json\(\{ ok: true \}\)/, 'public health output must stay minimal');
 
 assert.match(auth, /const SESSION_COOKIE = '__Host-cf_one_session'/);
 assert.match(auth, /SameSite=Strict/);
@@ -70,6 +75,15 @@ assert.match(admin, /ownerOnly\(session\)/, 'infrastructure and role management 
 assert.match(admin, /cloudflareApiConfigured:\s*Boolean\(env\.CF_API_TOKEN\)/, 'status may expose only whether the token is configured');
 assert.doesNotMatch(admin, /accountId:\s*env\.CF_ACCOUNT_ID|slice\(0,\s*6\).*CF_ACCOUNT_ID/, 'status must not return even a truncated configured account value');
 assert.doesNotMatch(admin, /json\([^\n]*CF_API_TOKEN|json\([^\n]*OWNER_PASSWORD|json\([^\n]*SESSION_SECRET|json\([^\n]*INVITE_CODE/, 'credential values must never be serialized into API responses');
+
+assert.match(ui, /data-theme="system"/, 'the shell must support a system-aware theme');
+assert.match(ui, /prefers-color-scheme:dark/, 'dark mode must follow the OS when using system mode');
+assert.match(ui, /bottom-navigation/, 'small screens need touch-first navigation');
+assert.doesNotMatch(ui, /Cloudflare edge|Durable Objects|SCOPED TOKEN|OWNER ONLY|INBOX \/ R2|MIRROR_TARGETS|Custom Domain|PBKDF2/, 'implementation details must not be used as public product copy');
+assert.match(client, /api\("\/api\/mirror\/targets"/, 'mirror UI must call the real self-service API directly');
+assert.doesNotMatch(client, /window\.confirm|\bconfirm\(/, 'destructive actions must use the in-app confirmation dialog');
+assert.doesNotMatch(client, /Cloudflare 资源|D1 \/ KV \/ R2|MIRROR_TARGETS|PBKDF2 密钥|Custom Domain|P1/, 'client-visible copy must not expose implementation details');
+assert.doesNotMatch(client, /JSON\.stringify\(await api\("\/api\/admin\//, 'admin UI must not dump raw internal API responses');
 
 assert.doesNotMatch(deploy, /secret.*bulk|runtimeSecrets|SESSION_SECRET|OWNER_PASSWORD|INVITE_CODE|CF_RUNTIME_API_TOKEN/i, 'deploy must not read or rewrite dashboard credentials');
 assert.doesNotMatch(deploy, /console\.log\([^)]*process\.env/i, 'deployment logs must not interpolate environment credentials');
