@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = relative => readFile(path.join(root, relative), 'utf8');
 
-const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoutes, ui, client] = await Promise.all([
+const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoutes, ui, client, authChallenge, authMigration] = await Promise.all([
   read('apps/web/wrangler.toml'),
   read('scripts/provision-cloudflare.mjs'),
   read('apps/web/src/index.ts'),
@@ -17,7 +17,9 @@ const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoute
   read('apps/web/src/admin-routes.ts'),
   read('apps/web/src/auth-routes.ts'),
   read('apps/web/src/ui.ts'),
-  read('apps/web/src/client.ts')
+  read('apps/web/src/client.ts'),
+  read('apps/web/src/auth-challenge.ts'),
+  read('apps/web/migrations/0008_auth_challenges.sql')
 ]);
 
 const clientSource = client.match(/export const APP_JS = String\.raw`([\s\S]*)`;\s*$/)?.[1];
@@ -56,7 +58,14 @@ assert.match(auth, /SELECT email, role, status FROM users WHERE id = \?1/, 'prot
 assert.match(auth, /user\.status !== 'active'/, 'disabled users must lose access immediately');
 assert.match(auth, /session\.sub === OWNER_ID && session\.email === OWNER_EMAIL/, 'owner identity must be fixed independently of editable user data');
 assert.match(auth, /export async function requireOwner/, 'infrastructure actions need a separate owner gate');
+assert.match(auth, /CREDENTIAL_SECRET/, 'password-verifier encryption must support a key independent from session signing');
+assert.doesNotMatch(auth, /DEVICE_BINDING\s*===\s*'strict'[\s\S]{0,100}return null/, 'client-hint drift must never invalidate an otherwise valid session');
 
+assert.match(authMigration, /CREATE TABLE IF NOT EXISTS auth_challenges/, 'login challenges need a strongly consistent D1 table');
+assert.match(authChallenge, /DELETE FROM auth_challenges[\s\S]*RETURNING/, 'login challenges must be atomically consumed once');
+assert.match(authRoutes, /storeAuthChallenge/, 'member challenges must be stored in D1');
+assert.match(authRoutes, /consumeAuthChallenge/, 'member challenges must be atomically consumed from D1');
+assert.doesNotMatch(authRoutes, /auth:challenge|CACHE\.(?:get|put|delete)/, 'member login handshakes must not depend on eventually consistent KV');
 assert.match(authRoutes, /VALUES \(\?1, \?2, \?3, 'member', 'active'\)/, 'new member registration must never self-promote');
 assert.doesNotMatch(authRoutes, /ADMIN_EMAILS|USER_ALLOWLIST/, 'member roles must come from D1 rather than environment allowlists');
 assert.match(authRoutes, /__Host-cf_one_session=\$\{token\}/, 'synthetic session checks must use the actual host-only cookie name');
@@ -67,6 +76,9 @@ assert.match(owner, /__Host-cf_one_session=/);
 assert.match(owner, /\^\[A-Za-z0-9_-\]\{24\}\$/, 'owner challenge identifiers must have an exact format');
 assert.match(owner, /const OWNER_ITERATIONS = 100_000;/, 'owner PBKDF2 must stay within the Cloudflare Workers 100,000-iteration limit');
 assert.doesNotMatch(owner, /OWNER_ITERATIONS\s*=\s*(?:1[0-9]{5,}|[2-9][0-9]{5,})/, 'owner PBKDF2 must never exceed the Workers runtime limit');
+assert.match(owner, /storeAuthChallenge/, 'owner challenges must be stored in D1');
+assert.match(owner, /consumeAuthChallenge/, 'owner challenges must be atomically consumed from D1');
+assert.doesNotMatch(owner, /owner:challenge|CACHE\.(?:get|put|delete)/, 'owner login handshakes must not depend on eventually consistent KV');
 
 assert.match(mirror, /const MIRROR_ZONE = '20100823\.xyz'/);
 assert.match(mirror, /const MIRROR_SERVICE = 'cf-one-apex'/);
@@ -87,11 +99,13 @@ assert.doesNotMatch(admin, /json\([^\n]*CF_API_TOKEN|json\([^\n]*OWNER_PASSWORD|
 
 assert.match(ui, /data-theme="system"/, 'the shell must support a system-aware theme');
 assert.match(ui, /prefers-color-scheme:dark/, 'dark mode must follow the OS when using system mode');
+assert.match(ui, /<html[^>]*style="--accent:/, 'theme accent must live on the root element so root design tokens can resolve it');
 assert.match(ui, /bottom-navigation/, 'small screens need touch-first navigation');
 assert.doesNotMatch(ui, /navigation-rail/, 'desktop navigation must not depend on a fixed side rail');
-assert.match(ui, /\*\[hidden\]\{display:none!important\}/, 'the hidden attribute must not be overridden by component display rules');
-assert.match(ui, /body\.is-admin \.feature-card\[data-admin-only\]\{display:grid!important\}/, 'admin feature cards must retain their grid layout when revealed');
+assert.match(ui, /\[hidden\]\{display:none!important\}/, 'the hidden attribute must not be overridden by component display rules');
+assert.match(ui, /body\.is-admin \[data-admin-only\]\{display:flex!important\}/, 'admin-only navigation and cards must restore their native flex layout');
 assert.doesNotMatch(ui, /margin-left:max\(/, 'desktop content positioning must not use fragile rail-offset arithmetic');
+assert.doesNotMatch(ui, /backdrop-filter/, 'the primary app shell must not require expensive blur effects to remain legible');
 assert.doesNotMatch(ui, /Cloudflare edge|Durable Objects|SCOPED TOKEN|OWNER ONLY|INBOX \/ R2|MIRROR_TARGETS|Custom Domain|PBKDF2/, 'implementation details must not be used as public product copy');
 assert.match(client, /api\("\/api\/mirror\/targets"/, 'mirror UI must call the real self-service API directly');
 assert.doesNotMatch(client, /window\.confirm|\bconfirm\(/, 'destructive actions must use the in-app confirmation dialog');
