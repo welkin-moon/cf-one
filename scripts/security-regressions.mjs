@@ -88,6 +88,10 @@ assert.doesNotMatch(admin, /json\([^\n]*CF_API_TOKEN|json\([^\n]*OWNER_PASSWORD|
 assert.match(ui, /data-theme="system"/, 'the shell must support a system-aware theme');
 assert.match(ui, /prefers-color-scheme:dark/, 'dark mode must follow the OS when using system mode');
 assert.match(ui, /bottom-navigation/, 'small screens need touch-first navigation');
+assert.doesNotMatch(ui, /navigation-rail/, 'desktop navigation must not depend on a fixed side rail');
+assert.match(ui, /\*\[hidden\]\{display:none!important\}/, 'the hidden attribute must not be overridden by component display rules');
+assert.match(ui, /body\.is-admin \.feature-card\[data-admin-only\]\{display:grid!important\}/, 'admin feature cards must retain their grid layout when revealed');
+assert.doesNotMatch(ui, /margin-left:max\(/, 'desktop content positioning must not use fragile rail-offset arithmetic');
 assert.doesNotMatch(ui, /Cloudflare edge|Durable Objects|SCOPED TOKEN|OWNER ONLY|INBOX \/ R2|MIRROR_TARGETS|Custom Domain|PBKDF2/, 'implementation details must not be used as public product copy');
 assert.match(client, /api\("\/api\/mirror\/targets"/, 'mirror UI must call the real self-service API directly');
 assert.doesNotMatch(client, /window\.confirm|\bconfirm\(/, 'destructive actions must use the in-app confirmation dialog');
