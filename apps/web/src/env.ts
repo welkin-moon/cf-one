@@ -1,6 +1,12 @@
+export interface RateLimiterBinding {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
+}
+
 export interface Env {
   DB: D1Database;
   CACHE: KVNamespace;
+  STORAGE_USER_RATE_LIMITER: RateLimiterBinding;
+  STORAGE_GLOBAL_RATE_LIMITER: RateLimiterBinding;
   MEDIA?: R2Bucket;
   EMAIL?: EmailSender;
   APP_NAME: string;
