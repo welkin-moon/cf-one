@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = relative => readFile(path.join(root, relative), 'utf8');
 
-const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoutes, ui, client, authClient, authChallenge, authMigration] = await Promise.all([
+const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoutes, ui, readability, client, authClient, authChallenge, authMigration] = await Promise.all([
   read('apps/web/wrangler.toml'),
   read('scripts/provision-cloudflare.mjs'),
   read('apps/web/src/index.ts'),
@@ -17,6 +17,7 @@ const [wrangler, provision, index, auth, owner, deploy, mirror, admin, authRoute
   read('apps/web/src/admin-routes.ts'),
   read('apps/web/src/auth-routes.ts'),
   read('apps/web/src/ui-v2.ts'),
+  read('apps/web/src/ui-readability.ts'),
   read('apps/web/src/client.ts'),
   read('apps/web/src/auth-client.ts'),
   read('apps/web/src/auth-challenge.ts'),
@@ -53,6 +54,7 @@ assert.match(index, /isMirrorHostname\(host\)/, 'mirror hosts must go through th
 assert.doesNotMatch(index, /endsWith\(['"]\.20100823\.xyz/, 'homepage routing must never broadly accept arbitrary subdomains');
 assert.match(index, /return asset\(APP_JS, 'text\/javascript; charset=utf-8'\)/, 'app pages must receive the checked-in client source directly');
 assert.match(index, /return asset\(AUTH_JS, 'text\/javascript; charset=utf-8'\)/, 'login must use an isolated checked-in client source');
+assert.match(index, /APP_CSS_READABILITY/, 'the production stylesheet must include the readability refinement layer');
 assert.match(index, /cache = 'no-store'/, 'rapid deployments must not mix stale JS or CSS with new HTML');
 assert.match(index, /self\.registration\.unregister\(\)/, 'the legacy shell-caching service worker must retire itself');
 assert.doesNotMatch(index, /caches\.open\(CACHE\)|cache\.addAll\(SHELL\)/, 'the service worker must not cache the application shell');
@@ -122,8 +124,11 @@ assert.doesNotMatch(ui, /grid-template-columns:248px/, 'the old oversized deskto
 assert.doesNotMatch(ui, /backdrop-filter/, 'core navigation must not depend on expensive blur effects');
 assert.doesNotMatch(ui, /@keyframes shimmer|animation:shimmer/, 'loading states must not waste render budget on decorative shimmer');
 assert.doesNotMatch(ui, /margin-left:max\(/, 'desktop content positioning must not use fragile rail-offset arithmetic');
-assert.doesNotMatch(ui, /font-size:(?:9|10)px/, 'primary UI text must not be rendered at unreadably small sizes');
 assert.doesNotMatch(ui, /Cloudflare edge|Durable Objects|SCOPED TOKEN|OWNER ONLY|INBOX \/ R2|MIRROR_TARGETS|Custom Domain|PBKDF2/, 'implementation details must not be used as public product copy');
+assert.match(readability, /\.navigation-rail a\{font-size:12px\}/, 'desktop navigation labels must render at a readable 12px minimum');
+assert.match(readability, /\.bottom-navigation a,\.bottom-more\{font-size:12px\}/, 'mobile navigation labels must render at a readable 12px minimum');
+assert.match(readability, /@media\(max-width:350px\)[\s\S]*?\.brand-copy\{display:none\}/, 'very narrow screens must reduce chrome instead of shrinking primary navigation text');
+assert.doesNotMatch(readability, /font-size:(?:[0-9](?:\.[0-9]+)?|1[01](?:\.[0-9]+)?)px/, 'the final readability layer must not introduce sub-12px text');
 
 assert.match(authClient, /await api\("\/api\/auth\/challenge"/, 'every login attempt must obtain a fresh challenge');
 assert.doesNotMatch(authClient, /let pending|pending\.challenge/, 'the login page must not reuse stale challenges while a user fills registration details');
