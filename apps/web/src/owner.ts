@@ -56,7 +56,7 @@ export async function ownerAuthRoutes(request: Request, env: Env, path: string):
     const body = await readJson<{ email?: string }>(request);
     const username = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     if (username !== OWNER_USERNAME) return null;
-    await rateLimit(request, env, 'owner-challenge', 12, 15 * 60);
+    await rateLimit(request, env, 'owner-challenge', 30, 15 * 60);
     const salt = await ownerSalt(env);
     const challenge = base64url(crypto.getRandomValues(new Uint8Array(32)));
     const challengeId = base64url(crypto.getRandomValues(new Uint8Array(18)));
@@ -77,7 +77,7 @@ export async function ownerAuthRoutes(request: Request, env: Env, path: string):
     const body = await readJson<{ email?: string; challengeId?: string; proof?: string }>(request);
     const username = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     if (username !== OWNER_USERNAME) return null;
-    await rateLimit(request, env, 'owner-login', 8, 15 * 60);
+    await rateLimit(request, env, 'owner-login', 20, 15 * 60);
     const challengeId = typeof body.challengeId === 'string' ? body.challengeId : '';
     const proof = typeof body.proof === 'string' ? body.proof : '';
     if (!/^[A-Za-z0-9_-]{24}$/.test(challengeId) || !/^[A-Za-z0-9_-]{43}$/.test(proof)) {
