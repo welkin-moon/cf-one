@@ -16,9 +16,9 @@ const DEFAULTS: Record<string, Omit<SiteProfile, 'host'>> = {
   'lunarlab.uk': {
     name: 'Lunar Lab',
     eyebrow: '你的私人空间',
-    tagline: '聊天、动态、工具、邮件和更多日常功能，都收在一个地方。',
+    tagline: '工具、邮件、镜像和常用应用，都收在一个地方。',
     accent: '#a78bfa',
-    features: ['chat', 'social', 'tools', 'mail', 'mirror', 'admin', 'store']
+    features: ['tools', 'mail', 'mirror', 'admin', 'store']
   },
   '20100823.xyz': {
     name: '20100823',
@@ -30,7 +30,9 @@ const DEFAULTS: Record<string, Omit<SiteProfile, 'host'>> = {
 };
 
 function isFeature(value: unknown): value is Feature {
-  return typeof value === 'string' && ['chat', 'social', 'tools', 'mail', 'mirror', 'admin', 'store'].includes(value);
+  // Chat/social belong to the future OpenX project and are deliberately not
+  // activatable through SITE_CONFIG in this application.
+  return typeof value === 'string' && ['tools', 'mail', 'mirror', 'admin', 'store'].includes(value);
 }
 
 export function siteProfile(request: Request, env: Env): SiteProfile {
