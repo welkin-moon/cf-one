@@ -52,10 +52,6 @@ function mirrorRuntimeScript(upstreamOrigin: string): string {
   return `(()=>{\n` +
     `  const upstream=new URL(${origin});\n` +
     `  const real=window.location;\n` +
-    `  const root=document.documentElement;\n` +
-    `  const encode=value=>{try{const bytes=new TextEncoder().encode(JSON.stringify(value));let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);return btoa(binary)}catch{return ''}};\n` +
-    `  const record=(name,value)=>{const encoded=encode(value);if(encoded)root.setAttribute(name,encoded.slice(0,1800))};\n` +
-    `  root.setAttribute('data-cf-one-runtime-ready','1');\n` +
     `  const upstreamHref=()=>upstream.origin+real.pathname+real.search+real.hash;\n` +
     `  const mapNavigation=value=>{\n` +
     `    try{\n` +
@@ -79,20 +75,6 @@ function mirrorRuntimeScript(upstreamOrigin: string): string {
     `    valueOf(){return upstreamHref()}\n` +
     `  };\n` +
     `  Object.defineProperty(globalThis,'__cfoneVirtualLocation',{value:virtual,writable:false,configurable:false});\n` +
-    `  addEventListener('error',event=>record('data-cf-one-error',{message:String(event.message||event.error?.message||'error').slice(0,320),file:String(event.filename||'').split('/').pop(),line:event.lineno||0,column:event.colno||0}),true);\n` +
-    `  addEventListener('unhandledrejection',event=>record('data-cf-one-rejection',{name:String(event.reason?.name||''),reason:String(event.reason?.message||event.reason||'rejection').slice(0,420)}),true);\n` +
-    `  const probeLogin=()=>{\n` +
-    `    const input=document.querySelector('input[autocomplete*="username"],input[type="email"],input[name*="user" i]');\n` +
-    `    if(!input){record('data-cf-one-login-probe',{found:false});return}\n` +
-    `    const style=getComputedStyle(input);const rect=input.getBoundingClientRect();let hiddenAncestor=null;\n` +
-    `    for(let node=input,depth=0;node&&node.nodeType===1&&depth<10;node=node.parentElement,depth++){\n` +
-    `      const current=getComputedStyle(node);\n` +
-    `      if(node.hidden||node.getAttribute('aria-hidden')==='true'||current.display==='none'||current.visibility==='hidden'||Number(current.opacity)===0){hiddenAncestor={depth,tag:node.tagName,display:current.display,visibility:current.visibility,opacity:current.opacity,hidden:Boolean(node.hidden),ariaHidden:node.getAttribute('aria-hidden')};break}\n` +
-    `    }\n` +
-    `    record('data-cf-one-login-probe',{found:true,display:style.display,visibility:style.visibility,opacity:style.opacity,pointerEvents:style.pointerEvents,disabled:Boolean(input.disabled),hidden:Boolean(input.hidden),ariaHidden:input.getAttribute('aria-hidden'),rect:{x:Math.round(rect.x),y:Math.round(rect.y),width:Math.round(rect.width),height:Math.round(rect.height)},hiddenAncestor});\n` +
-    `  };\n` +
-    `  document.addEventListener('DOMContentLoaded',()=>{probeLogin();setTimeout(probeLogin,1000);setTimeout(probeLogin,3000);setTimeout(probeLogin,7000)},{once:true});\n` +
-    `  addEventListener('load',probeLogin,{once:true});\n` +
     `})();`;
 }
 
@@ -145,14 +127,6 @@ function rewrittenMirrorResponse(response: Response, body: string): Response {
   return new Response(body, { status: response.status, statusText: response.statusText, headers });
 }
 
-function mirrorDiagnosticPath(pathname: string): string {
-  return pathname.replace(/^\/__cfone_origin__\/[^/]+\/[^/]+/, '/__cfone_origin__/REDACTED');
-}
-
-function cookieCount(value: string | null): number {
-  return value ? value.split(';').map(part => part.trim()).filter(Boolean).length : 0;
-}
-
 function cookieValue(value: string | null, name: string): string {
   if (!value) return '';
   for (const part of value.split(';')) {
@@ -178,59 +152,6 @@ function applyXJetfuelHeaders(headers: Headers): void {
   headers.set('origin', 'https://x.com');
   headers.set('referer', 'https://x.com/i/jf/onboarding/web?mode=login');
   headers.delete('x-twitter-client-language');
-}
-
-function setCookieCount(headers: Headers): number {
-  const modern = headers as Headers & { getSetCookie?: () => string[] };
-  if (typeof modern.getSetCookie === 'function') return modern.getSetCookie().length;
-  return headers.has('set-cookie') ? 1 : 0;
-}
-
-async function logMirrorClientResponse(request: Request, response: Response, pathname: string): Promise<void> {
-  if (request.headers.get('sec-fetch-dest') !== 'empty') return;
-  const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
-  const summary: Record<string, unknown> = {
-    path: mirrorDiagnosticPath(pathname),
-    method: request.method,
-    status: response.status,
-    contentType: contentType.split(';')[0],
-    requestCookieCount: cookieCount(request.headers.get('cookie')),
-    setCookieCount: setCookieCount(response.headers),
-    hasCfMitigated: response.headers.has('cf-mitigated'),
-    hasWwwAuthenticate: response.headers.has('www-authenticate'),
-    hasRetryAfter: response.headers.has('retry-after'),
-    hasLocation: response.headers.has('location')
-  };
-  const declaredLength = Number(response.headers.get('content-length') ?? 0);
-  const readable = response.body && (!Number.isFinite(declaredLength) || declaredLength <= 1_000_000) &&
-    (response.status >= 400 || contentType.includes('json') || contentType.includes('text/html') || contentType.includes('text/plain'));
-  if (readable) {
-    try {
-      const text = await response.clone().text();
-      const lower = text.toLowerCase();
-      summary.bytes = text.length;
-      summary.relayRefs = (text.match(/__cfone_origin__/g) ?? []).length;
-      summary.hasEmailLabel = text.includes('Email or username');
-      summary.hasContinuePhone = text.includes('Continue with phone');
-      summary.looksHtml = /^\s*<!doctype\s+html|^\s*<html\b/i.test(text);
-      summary.looksJson = /^\s*[\[{]/.test(text);
-      summary.mentionsChallenge = /challenge|captcha|turnstile/.test(lower);
-      summary.mentionsBot = /\bbot\b|automation|automated/.test(lower);
-      summary.mentionsForbidden = /forbidden|access denied|not allowed/.test(lower);
-      summary.mentionsAuth = /unauthori[sz]ed|authentication|authorization|guest[_ -]?token|csrf/.test(lower);
-      summary.mentionsRateLimit = /rate.?limit|too many requests/.test(lower);
-      if (contentType.includes('json') || /^\s*[\[{]/.test(text)) {
-        try {
-          const parsed: unknown = JSON.parse(text);
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            summary.topLevelKeys = Object.keys(parsed as Record<string, unknown>).slice(0, 24);
-            summary.hasErrorKey = Object.prototype.hasOwnProperty.call(parsed, 'error') || Object.prototype.hasOwnProperty.call(parsed, 'errors');
-          }
-        } catch {}
-      }
-    } catch {}
-  }
-  console.log('mirror.compat-diagnostic', JSON.stringify(summary));
 }
 
 async function mirrorRuntimeRoute(request: Request, env: Env, hostname: string): Promise<Response> {
@@ -295,7 +216,6 @@ async function mirrorCompatibilityRoute(request: Request, env: Env, hostname: st
   if (incoming.pathname === MIRROR_RUNTIME_PATH) return mirrorRuntimeRoute(request, env, hostname);
 
   const response = await mirrorHostRoute(await mirrorUpstreamRequest(request, env, hostname), env, hostname);
-  await logMirrorClientResponse(request, response, incoming.pathname);
   if (request.method === 'HEAD' || !response.body) return response;
 
   const type = (response.headers.get('content-type') ?? '').toLowerCase();
