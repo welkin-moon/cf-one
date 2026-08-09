@@ -421,7 +421,7 @@ export async function mirrorHostRoute(request: Request, env: Env, hostname: stri
   for (const name of HOP_BY_HOP) headers.delete(name);
   for (const name of SENSITIVE_EDGE_HEADERS) headers.delete(name);
   headers.delete('host');
-  headers.delete('sec-fetch-site');
+  if (relay.relayed) headers.delete('sec-fetch-site');
 
   const rawCookies = headers.get('cookie') ?? '';
   const upstreamCookies = relay.relayed && relay.cookiePrefix ? relayCookieHeader(rawCookies, relay.cookiePrefix) : mainCookieHeader(rawCookies);
