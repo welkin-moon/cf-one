@@ -4,6 +4,8 @@ import { HttpError } from './http';
 const RELAY_PREFIX = '/__cfone_origin__/';
 const RELAY_TTL_SECONDS = 24 * 60 * 60;
 const MAX_REWRITE_BYTES = 6 * 1024 * 1024;
+const INTERNAL_SHARED_COOKIE_HEADER = 'x-cf-one-shared-cookie-names';
+const COOKIE_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,128}$/;
 const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
 const SENSITIVE_EDGE_HEADERS = ['cf-connecting-ip', 'cf-ipcountry', 'cf-ray', 'x-forwarded-for', 'x-real-ip', 'cf-visitor', 'cdn-loop'];
 const encoder = new TextEncoder();
@@ -338,12 +340,35 @@ function parseCookies(value: string): Array<[string, string]> {
   return output;
 }
 
+function parseSharedCookieNames(value: string | null): Set<string> {
+  const output = new Set<string>();
+  if (!value) return output;
+  for (const part of value.split(',')) {
+    const name = part.trim();
+    if (COOKIE_NAME.test(name) && !name.startsWith('__cfr_')) output.add(name);
+  }
+  return output;
+}
+
+function sameSiteRelayTarget(target: URL, configuredOrigin: URL): boolean {
+  const targetHost = target.hostname.toLowerCase();
+  const configuredHost = configuredOrigin.hostname.toLowerCase();
+  return targetHost === configuredHost || targetHost.endsWith(`.${configuredHost}`);
+}
+
 function mainCookieHeader(value: string): string {
   return parseCookies(value).filter(([name]) => !name.startsWith('__cfr_')).map(([name, cookieValue]) => `${name}=${cookieValue}`).join('; ');
 }
 
-function relayCookieHeader(value: string, prefix: string): string {
-  return parseCookies(value).filter(([name]) => name.startsWith(prefix)).map(([name, cookieValue]) => `${name.slice(prefix.length)}=${cookieValue}`).join('; ');
+function relayCookieHeader(value: string, prefix: string, sharedNames: Set<string>): string {
+  const merged = new Map<string, string>();
+  for (const [name, cookieValue] of parseCookies(value)) {
+    if (sharedNames.has(name) && !name.startsWith('__cfr_')) merged.set(name, cookieValue);
+  }
+  for (const [name, cookieValue] of parseCookies(value)) {
+    if (name.startsWith(prefix)) merged.set(name.slice(prefix.length), cookieValue);
+  }
+  return Array.from(merged, ([name, cookieValue]) => `${name}=${cookieValue}`).join('; ');
 }
 
 function setCookies(headers: Headers): string[] {
@@ -418,13 +443,18 @@ export async function mirrorHostRoute(request: Request, env: Env, hostname: stri
   if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(request.method)) throw new HttpError(405, 'unsupported mirror method');
 
   const headers = new Headers(request.headers);
+  const requestedSharedCookies = parseSharedCookieNames(headers.get(INTERNAL_SHARED_COOKIE_HEADER));
+  headers.delete(INTERNAL_SHARED_COOKIE_HEADER);
   for (const name of HOP_BY_HOP) headers.delete(name);
   for (const name of SENSITIVE_EDGE_HEADERS) headers.delete(name);
   headers.delete('host');
   if (relay.relayed) headers.delete('sec-fetch-site');
 
   const rawCookies = headers.get('cookie') ?? '';
-  const upstreamCookies = relay.relayed && relay.cookiePrefix ? relayCookieHeader(rawCookies, relay.cookiePrefix) : mainCookieHeader(rawCookies);
+  const sharedCookies = relay.relayed && sameSiteRelayTarget(target, configuredOrigin) ? requestedSharedCookies : new Set<string>();
+  const upstreamCookies = relay.relayed && relay.cookiePrefix
+    ? relayCookieHeader(rawCookies, relay.cookiePrefix, sharedCookies)
+    : mainCookieHeader(rawCookies);
   if (upstreamCookies) headers.set('cookie', upstreamCookies); else headers.delete('cookie');
 
   const mirrorOrigin = incoming.origin;
