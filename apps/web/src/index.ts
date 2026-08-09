@@ -22,6 +22,7 @@ const ALLOWED_HOSTS = new Set(['lunarlab.uk', '20100823.xyz']);
 const MIRROR_RUNTIME_PATH = '/__cfone_runtime__.js';
 const MIRROR_REWRITE_LIMIT = 6 * 1024 * 1024;
 const DOWNSTREAM_IDENTITY_HEADERS = ['cf-brapi-request-id', 'cf-brapi-devtools', 'cf-biso-devtools', 'signature-agent', 'signature', 'signature-input'];
+const X_WEB_BEARER = 'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
 const MIRROR_PATH_COMPAT: Record<string, Array<{ pattern: RegExp; prefix: string }>> = {
   'x.com': [
     { pattern: /^\/1\.1\//, prefix: '/i/api' },
@@ -152,6 +153,33 @@ function cookieCount(value: string | null): number {
   return value ? value.split(';').map(part => part.trim()).filter(Boolean).length : 0;
 }
 
+function cookieValue(value: string | null, name: string): string {
+  if (!value) return '';
+  for (const part of value.split(';')) {
+    const trimmed = part.trim();
+    const index = trimmed.indexOf('=');
+    if (index > 0 && trimmed.slice(0, index) === name) return trimmed.slice(index + 1);
+  }
+  return '';
+}
+
+function applyXJetfuelHeaders(headers: Headers): void {
+  if (!headers.has('authorization')) headers.set('authorization', X_WEB_BEARER);
+  const cookies = headers.get('cookie');
+  const guestToken = cookieValue(cookies, 'gt');
+  const csrfToken = cookieValue(cookies, 'ct0');
+  if (guestToken && !headers.has('x-guest-token')) headers.set('x-guest-token', guestToken);
+  if (csrfToken && !headers.has('x-csrf-token')) headers.set('x-csrf-token', csrfToken);
+  if (!headers.has('x-client-transaction-id')) headers.set('x-client-transaction-id', 'e:');
+  headers.set('x-twitter-active-user', 'yes');
+  if (!headers.has('x-jf-v')) headers.set('x-jf-v', 'JP-5');
+  if (!headers.has('x-jf-client-theme')) headers.set('x-jf-client-theme', 'light');
+  if (!headers.has('timezone')) headers.set('timezone', 'UTC');
+  headers.set('origin', 'https://x.com');
+  headers.set('referer', 'https://x.com/i/jf/onboarding/web?mode=login');
+  headers.delete('x-twitter-client-language');
+}
+
 function setCookieCount(headers: Headers): number {
   const modern = headers as Headers & { getSetCookie?: () => string[] };
   if (typeof modern.getSetCookie === 'function') return modern.getSetCookie().length;
@@ -234,16 +262,23 @@ async function mirrorUpstreamRequest(request: Request, env: Env, hostname: strin
 
   const incoming = new URL(request.url);
   let pathname = incoming.pathname;
+  let originHost = '';
   if (pathname.startsWith('/1.1/') || pathname.startsWith('/onboarding/web')) {
     const row = await env.DB.prepare(`SELECT origin_host FROM mirror_targets
       WHERE lower(hostname) = ?1 AND state = 'active'`).bind(hostname.toLowerCase()).first<{ origin_host: string }>();
-    const rules = row ? MIRROR_PATH_COMPAT[row.origin_host.toLowerCase()] : undefined;
+    originHost = row?.origin_host.toLowerCase() ?? '';
+    const rules = originHost ? MIRROR_PATH_COMPAT[originHost] : undefined;
     const rule = rules?.find(candidate => candidate.pattern.test(pathname));
     if (rule) {
       pathname = `${rule.prefix}${pathname}`;
       incoming.pathname = pathname;
       changed = true;
     }
+  }
+
+  if (originHost === 'x.com' && incoming.pathname.startsWith('/i/jfapi/')) {
+    applyXJetfuelHeaders(headers);
+    changed = true;
   }
 
   if (!changed) return request;
