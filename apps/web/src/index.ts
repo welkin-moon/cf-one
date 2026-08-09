@@ -21,8 +21,12 @@ import { APP_CSS, appPage } from './ui';
 const ALLOWED_HOSTS = new Set(['lunarlab.uk', '20100823.xyz']);
 const MIRROR_RUNTIME_PATH = '/__cfone_runtime__.js';
 const MIRROR_REWRITE_LIMIT = 6 * 1024 * 1024;
+const MIRROR_SHARED_COOKIE_HEADER = 'x-cf-one-shared-cookie-names';
 const DOWNSTREAM_IDENTITY_HEADERS = ['cf-brapi-request-id', 'cf-brapi-devtools', 'cf-biso-devtools', 'signature-agent', 'signature', 'signature-input'];
 const X_WEB_BEARER = 'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
+const X_SHARED_DOMAIN_COOKIES = [
+  'auth_token', 'ct0', 'kdt', 'twid', 'gt', 'guest_id', 'guest_id_ads', 'guest_id_marketing', 'personalization_id', 'att', 'dtab_local'
+].join(',');
 const MIRROR_PATH_COMPAT: Record<string, Array<{ pattern: RegExp; prefix: string }>> = {
   'x.com': [
     { pattern: /^\/1\.1\//, prefix: '/i/api' },
@@ -175,6 +179,10 @@ async function mirrorRuntimeRoute(request: Request, env: Env, hostname: string):
 async function mirrorUpstreamRequest(request: Request, env: Env, hostname: string): Promise<Request> {
   const headers = new Headers(request.headers);
   let changed = false;
+  if (headers.has(MIRROR_SHARED_COOKIE_HEADER)) {
+    headers.delete(MIRROR_SHARED_COOKIE_HEADER);
+    changed = true;
+  }
   for (const name of DOWNSTREAM_IDENTITY_HEADERS) {
     if (!headers.has(name)) continue;
     headers.delete(name);
@@ -184,10 +192,17 @@ async function mirrorUpstreamRequest(request: Request, env: Env, hostname: strin
   const incoming = new URL(request.url);
   let pathname = incoming.pathname;
   let originHost = '';
-  if (pathname.startsWith('/1.1/') || pathname.startsWith('/onboarding/web')) {
+  const authenticatedRelay = pathname.startsWith('/__cfone_origin__/') &&
+    (headers.has('authorization') || headers.has('x-csrf-token') || headers.has('x-twitter-auth-type'));
+  const needsOriginProfile = pathname.startsWith('/1.1/') || pathname.startsWith('/onboarding/web') ||
+    pathname.startsWith('/i/jfapi/') || authenticatedRelay;
+  if (needsOriginProfile) {
     const row = await env.DB.prepare(`SELECT origin_host FROM mirror_targets
       WHERE lower(hostname) = ?1 AND state = 'active'`).bind(hostname.toLowerCase()).first<{ origin_host: string }>();
     originHost = row?.origin_host.toLowerCase() ?? '';
+  }
+
+  if (pathname.startsWith('/1.1/') || pathname.startsWith('/onboarding/web')) {
     const rules = originHost ? MIRROR_PATH_COMPAT[originHost] : undefined;
     const rule = rules?.find(candidate => candidate.pattern.test(pathname));
     if (rule) {
@@ -199,6 +214,11 @@ async function mirrorUpstreamRequest(request: Request, env: Env, hostname: strin
 
   if (originHost === 'x.com' && incoming.pathname.startsWith('/i/jfapi/')) {
     applyXJetfuelHeaders(headers);
+    changed = true;
+  }
+
+  if (originHost === 'x.com' && authenticatedRelay) {
+    headers.set(MIRROR_SHARED_COOKIE_HEADER, X_SHARED_DOMAIN_COOKIES);
     changed = true;
   }
 
