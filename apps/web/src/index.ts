@@ -23,7 +23,10 @@ const MIRROR_RUNTIME_PATH = '/__cfone_runtime__.js';
 const MIRROR_REWRITE_LIMIT = 6 * 1024 * 1024;
 const DOWNSTREAM_IDENTITY_HEADERS = ['cf-brapi-request-id', 'cf-brapi-devtools', 'cf-biso-devtools', 'signature-agent', 'signature', 'signature-input'];
 const MIRROR_PATH_COMPAT: Record<string, Array<{ pattern: RegExp; prefix: string }>> = {
-  'x.com': [{ pattern: /^\/1\.1\//, prefix: '/i/api' }]
+  'x.com': [
+    { pattern: /^\/1\.1\//, prefix: '/i/api' },
+    { pattern: /^\/onboarding\/web(?:\/|$)/, prefix: '/i/jfapi' }
+  ]
 };
 const PAGE_FEATURES: Record<string, Feature> = {
   files: 'files', tools: 'tools', mail: 'mail', mirror: 'mirror', store: 'store', admin: 'admin'
@@ -231,7 +234,7 @@ async function mirrorUpstreamRequest(request: Request, env: Env, hostname: strin
 
   const incoming = new URL(request.url);
   let pathname = incoming.pathname;
-  if (pathname.startsWith('/1.1/')) {
+  if (pathname.startsWith('/1.1/') || pathname.startsWith('/onboarding/web')) {
     const row = await env.DB.prepare(`SELECT origin_host FROM mirror_targets
       WHERE lower(hostname) = ?1 AND state = 'active'`).bind(hostname.toLowerCase()).first<{ origin_host: string }>();
     const rules = row ? MIRROR_PATH_COMPAT[row.origin_host.toLowerCase()] : undefined;
