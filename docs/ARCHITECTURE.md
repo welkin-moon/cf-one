@@ -47,6 +47,6 @@ The optional `send_email` binding is generated only when explicitly enabled. On 
 
 ## Provisioning
 
-`scripts/provision-cloudflare.mjs` uses the Cloudflare REST API to find or create one D1 database, one KV namespace, and one R2 bucket. It writes `wrangler.generated.jsonc`, which is ignored by Git. `scripts/deploy-cloudflare.mjs` applies migrations, deploys through Wrangler, and streams runtime secrets to `wrangler secret bulk` over stdin.
+`scripts/provision-cloudflare.mjs` uses the Cloudflare REST API to find or create one D1 database, one KV namespace, and one R2 bucket. It writes `wrangler.generated.jsonc`, which is ignored by Git. `scripts/deploy-cloudflare.mjs` applies migrations, reconciles API-managed mirror domains from D1, uploads a version with Wrangler, and deploys traffic to that version without synchronizing triggers.
 
-The broad provisioning token remains a Workers Build secret. The optional runtime Cloudflare token is a separate, narrower secret.
+The broad provisioning token remains a Workers Build secret. Runtime variables and secrets are managed on the deployed Worker and preserved by `keep_vars`; the deployment script intentionally never reads or rewrites them. The optional runtime Cloudflare token is a separate, narrower Worker secret.

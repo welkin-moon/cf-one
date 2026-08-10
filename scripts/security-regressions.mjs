@@ -162,5 +162,6 @@ assert.doesNotMatch(client, /JSON\.stringify\(await api\("\/api\/admin\//, 'admi
 
 assert.doesNotMatch(deploy, /secret.*bulk|runtimeSecrets|SESSION_SECRET|OWNER_PASSWORD|INVITE_CODE|CF_RUNTIME_API_TOKEN/i, 'deploy must not read or rewrite dashboard credentials');
 assert.doesNotMatch(deploy, /console\.log\([^)]*process\.env/i, 'deployment logs must not interpolate environment credentials');
+assert.match(deploy, /reconcileApexDomains/, 'deploy must attach configured apex domains without synchronizing away API-managed mirror domains');
 
 console.log('security regression checks passed');
