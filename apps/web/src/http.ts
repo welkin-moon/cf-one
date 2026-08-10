@@ -10,18 +10,25 @@ const SECURITY_HEADERS: Record<string, string> = {
 };
 
 const TEST_SANDBOX_CSP = "default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-src about:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'";
+const LEGACY_TEST_CSP = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'";
 
 export function withSecurityHeaders(response: Response): Response {
   const headers = new Headers(response.headers);
   const isMirror = headers.has('x-cf-one-mirror');
   const isTestSandbox = headers.has('x-cf-one-test-sandbox');
+  const isLegacyTest = headers.has('x-cf-one-legacy-test');
   headers.delete('x-cf-one-test-sandbox');
+  headers.delete('x-cf-one-legacy-test');
   if (isMirror) {
     headers.set('strict-transport-security', 'max-age=31536000');
     headers.set('x-content-type-options', 'nosniff');
   } else {
     for (const [key, value] of Object.entries(SECURITY_HEADERS)) headers.set(key, value);
     if (isTestSandbox) headers.set('content-security-policy', TEST_SANDBOX_CSP);
+    if (isLegacyTest) {
+      headers.set('content-security-policy', LEGACY_TEST_CSP);
+      headers.set('permissions-policy', 'camera=(), microphone=(), geolocation=(self)');
+    }
   }
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }

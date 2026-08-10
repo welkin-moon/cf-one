@@ -61,7 +61,10 @@ async function legacyMf01sm(request: Request, env: Env, legacyPath: string): Pro
   target.hostname = 'mf01sm.internal';
   target.port = '';
   target.pathname = legacyPath;
-  return env.LEGACY_MF01SM.fetch(new Request(target.href, request));
+  const response = await env.LEGACY_MF01SM.fetch(new Request(target.href, request));
+  const headers = new Headers(response.headers);
+  headers.set('x-cf-one-legacy-test', '1');
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 function mirrorRuntimeScript(upstreamOrigin: string): string {
   const origin = JSON.stringify(upstreamOrigin);
