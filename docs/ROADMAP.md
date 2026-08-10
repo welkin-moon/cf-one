@@ -35,7 +35,7 @@
 ## Inputs still needed from the owner
 
 - exact feature split and visual copy for each domain;
-- administrator and member email allowlists;
+- the intended initial member list and invite-code rotation point;
 - desired inbound addresses and verified outbound destinations;
 - authorized mirror origins and whether each needs cookies, authorization, or custom rewriting;
 - whether chat should prioritize Telegram-like rooms, Matrix-like spaces, or direct messages first;

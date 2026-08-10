@@ -21,30 +21,30 @@ Connect this repository to a new Cloudflare Worker and use this deploy command:
 pnpm cf:deploy
 ```
 
-The command idempotently finds or creates the D1 database, KV namespace, and R2 bucket, writes an ephemeral Wrangler configuration, applies migrations, deploys the Worker to both custom domains, and uploads runtime secrets. Resource IDs and secrets are never committed.
+The command idempotently finds or creates the D1 database, KV namespace, and R2 bucket, writes an ephemeral Wrangler configuration, applies migrations, and uploads a new Worker version without replacing API-managed mirror domains. Resource IDs and secrets are never committed.
 
-At minimum, add these Cloudflare Workers Build variables/secrets:
+At minimum, add these Cloudflare Workers **Build** variables/secrets:
 
 ```text
 CLOUDFLARE_ACCOUNT_ID
 CLOUDFLARE_API_TOKEN
-SESSION_SECRET
-INVITE_CODE
-CF_ONE_ADMIN_EMAILS
-CF_ONE_USER_ALLOWLIST
 ```
 
-Use a scoped API Token, not a Global API Key. `SESSION_SECRET` must remain stable and contain at least 32 random characters. See [Deployment](docs/DEPLOYMENT.md) for permissions, exact dashboard steps, domain settings, email routing, and all optional variables.
+After the first deployment, configure `SESSION_SECRET`, `INVITE_CODE`, `OWNER_PASSWORD`, and the other application settings under the deployed Worker's **Settings → Variables and Secrets**. Sensitive values must use the **Secret** type. Deployments deliberately preserve those dashboard-managed bindings and never copy build secrets into the Worker runtime.
+
+Use a scoped API Token, not a Global API Key. `SESSION_SECRET` must remain stable and contain at least 32 random characters. See [Deployment](docs/DEPLOYMENT.md) for the complete build/runtime split, permissions, domain settings, email routing, and optional variables.
 
 ## Local development
 
 ```bash
 corepack enable
 pnpm install
-cp apps/web/.dev.vars.example apps/web/.dev.vars
+cp .dev.vars.example apps/web/.dev.vars
 pnpm db:migrate:local
 pnpm dev
 ```
+
+In PowerShell, replace the copy command with `Copy-Item .dev.vars.example apps/web/.dev.vars`.
 
 Checks:
 

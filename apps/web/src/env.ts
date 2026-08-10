@@ -13,17 +13,13 @@ export interface Env {
   SESSION_SECRET: string;
   CREDENTIAL_SECRET?: string;
   INVITE_CODE: string;
-  OWNER_USERNAME: string;
   OWNER_PASSWORD: string;
-  ADMIN_EMAILS: string;
-  USER_ALLOWLIST: string;
   MAIL_RECIPIENTS: string;
   EMAIL_DESTINATIONS: string;
   MANAGED_ZONES: string;
   DEVICE_BINDING: 'soft' | 'strict';
   CF_ACCOUNT_ID?: string;
   CF_API_TOKEN?: string;
-  MIRROR_TARGETS: string;
   SITE_CONFIG: string;
 }
 

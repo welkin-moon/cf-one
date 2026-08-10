@@ -89,19 +89,49 @@ async function reconcileMirrorDomains(config) {
   console.log(`Mirror-domain reconciliation complete: ${active.length} active, ${repaired} repaired.`);
 }
 
+async function reconcileApexDomains(config) {
+  const workerName = config?.name;
+  const hostnames = (config?.routes ?? [])
+    .filter(route => route?.custom_domain === true)
+    .map(route => String(route?.pattern ?? '').trim().toLowerCase())
+    .filter(Boolean);
+  if (!workerName || !hostnames.length) throw new Error('Generated Wrangler config is missing Worker identity or Custom Domains.');
+
+  let attachedCount = 0;
+  for (const hostname of hostnames) {
+    const listed = await api(`/accounts/${accountId}/workers/domains?hostname=${encodeURIComponent(hostname)}`);
+    const exact = Array.isArray(listed) ? listed.find(domain => String(domain?.hostname ?? '').toLowerCase() === hostname) : null;
+    if (exact) {
+      if (exact.service !== workerName) {
+        throw new Error(`Apex hostname ${hostname} is attached to another Worker; refusing to overwrite it.`);
+      }
+      continue;
+    }
+    await api(`/accounts/${accountId}/workers/domains`, {
+      method: 'PUT',
+      body: JSON.stringify({ hostname, service: workerName })
+    });
+    attachedCount++;
+    console.log(`Attached apex domain ${hostname}.`);
+  }
+  console.log(`Apex-domain reconciliation complete: ${hostnames.length} configured, ${attachedCount} attached.`);
+}
+
 await run(['d1', 'migrations', 'apply', process.env.CF_ONE_D1_NAME?.trim() || 'cf-one', '--remote', '--config', 'wrangler.generated.jsonc']);
 const generatedConfig = JSON.parse(await readFile(outputPath, 'utf8'));
-await reconcileMirrorDomains(generatedConfig);
 
 // Code/config versions and traffic deployments are deliberately separated from
 // Worker triggers. `wrangler deploy` synchronizes configured routes/custom
 // domains, which can delete API-created mN.20100823.xyz mirror domains because
 // those dynamic hostnames are intentionally absent from the checked-in config.
 // `versions upload` + `versions deploy` updates the Worker version without
-// touching routes/domains. Trigger changes must be performed explicitly with
-// `wrangler triggers deploy` during infrastructure maintenance.
+// touching routes/domains. The API reconciliation below adds only the known
+// apex and D1-backed mirror domains; it never runs a trigger sync that could
+// delete dynamic mN.20100823.xyz hostnames.
 const versionTag = `cf-one-${Date.now().toString(36)}`;
 await run(['versions', 'upload', '--config', 'wrangler.generated.jsonc', '--tag', versionTag, '--message', 'cf-one automated build']);
 await run(['versions', 'deploy', '--config', 'wrangler.generated.jsonc', '--version-tag', versionTag, '--yes', '--message', 'cf-one automated build']);
+await reconcileApexDomains(generatedConfig);
+await reconcileMirrorDomains(generatedConfig);
 
-console.log(`cf-one-apex version ${versionTag} deployed; Worker routes and Custom Domains were not synchronized, and active mirror domains were reconciled from D1.`);
+console.log(`cf-one-apex version ${versionTag} deployed; configured apex and active mirror domains were reconciled without deleting API-managed hostnames.`);

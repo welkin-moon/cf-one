@@ -2,7 +2,7 @@
 
 ## Secrets and Cloudflare control
 
-Never commit `.dev.vars`, generated Wrangler configuration, API tokens, passwords, or invite codes. Production secrets are uploaded with Wrangler and are not ordinary plaintext environment variables.
+Never commit `.dev.vars`, generated Wrangler configuration, API tokens, passwords, or invite codes. Production credentials are configured as Secret bindings under the deployed Worker's **Settings → Variables and Secrets**; the deployment script preserves them and does not copy values from the build environment.
 
 `SESSION_SECRET` signs sessions and encrypts login verifiers. Keep it stable and back it up securely; rotating it invalidates sessions and makes existing verifier boxes unreadable. Account recovery and controlled key rotation remain roadmap work.
 
@@ -12,7 +12,7 @@ DNS mutations require an admin session, same-origin request, CSRF token, zone ve
 
 ## Accounts
 
-- First registration requires both an allowlisted email (when configured) and `INVITE_CODE`.
+- First registration requires `INVITE_CODE`. Any email address can register while that secret is enabled, so rotate or remove it when the intended members have joined; account status and roles are then managed in D1 by the site owner.
 - Later login uses a one-time KV challenge; challenges expire after five minutes and are deleted on use.
 - PBKDF2 runs in the browser to stay inside the Workers Free 10 ms CPU limit. The password itself is never sent to the Worker.
 - The stored verifier is encrypted with AES-GCM under a key derived from `SESSION_SECRET`; a D1-only leak does not expose a directly reusable verifier.
