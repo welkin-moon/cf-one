@@ -18,7 +18,7 @@ import { testStudioRoutes } from './test-studio';
 import { TEST_RUNNER_JS, TEST_STUDIO_JS, testDirectoryPage, testRunPage, testStudioPage } from './test-pages';
 import { APP_CSS, appPage } from './ui';
 
-const ALLOWED_HOSTS = new Set(['lunarlab.uk', '20100823.xyz']);
+const ALLOWED_HOSTS = new Set(['lunarlab.uk', '20100823.xyz', 'test.lunarlab.uk', 'mf01sm.lunarlab.uk']);
 const MIRROR_RUNTIME_PATH = '/__cfone_runtime__.js';
 const MIRROR_REWRITE_LIMIT = 6 * 1024 * 1024;
 const MIRROR_SHARED_COOKIE_HEADER = 'x-cf-one-shared-cookie-names';
@@ -51,6 +51,18 @@ function homeWithTest(body: string): string {
   return body.replace('</section><footer class="site-footer">', `${card}</section><footer class="site-footer">`);
 }
 
+function visitorHomePage(): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Lunar Lab</title><style>:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:light dark}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#141218;color:#e6e1e5}.shell{width:min(760px,calc(100% - 32px));padding:48px 0}.eyebrow{color:#d0bcff;font-weight:800;letter-spacing:.08em}.card{margin-top:22px;padding:24px;border:1px solid #49454f;border-radius:24px;background:#211f26}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:22px}a{display:inline-flex;min-height:48px;align-items:center;padding:0 18px;border-radius:999px;text-decoration:none;font-weight:700}.primary{background:#d0bcff;color:#381e72}.secondary{background:#4a4458;color:#e6e1e5}p{color:#cac4d0;line-height:1.7}h1{font-size:clamp(40px,8vw,72px);margin:10px 0 14px;line-height:1}</style></head><body><main class="shell"><span class="eyebrow">LUNAR LAB / VISITOR</span><h1>Visitor space.</h1><p>Public tests live here, with comments and other public interactions planned for later. Long-lived visitor accounts will only be used for those public interactions; private files, mail, mirrors and administration belong to the member site.</p><div class="card"><strong>Available now</strong><p>Open Test to browse public tests. The existing mf01sm test is available at its new path.</p><div class="actions"><a class="primary" href="https://test.lunarlab.uk/">Open Test</a><a class="secondary" href="https://20100823.xyz/">Member site</a></div></div></main></body></html>`;
+}
+
+async function legacyMf01sm(request: Request, env: Env, legacyPath: string): Promise<Response> {
+  const target = new URL(request.url);
+  target.protocol = 'https:';
+  target.hostname = 'mf01sm.internal';
+  target.port = '';
+  target.pathname = legacyPath;
+  return env.LEGACY_MF01SM.fetch(new Request(target.href, request));
+}
 function mirrorRuntimeScript(upstreamOrigin: string): string {
   const origin = JSON.stringify(upstreamOrigin);
   return `(()=>{\n` +
@@ -254,10 +266,30 @@ async function mirrorCompatibilityRoute(request: Request, env: Env, hostname: st
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const host = url.hostname.toLowerCase();
+  const path = url.pathname.replace(/\/{2,}/g, '/');
+
+  if (host === 'mf01sm.lunarlab.uk') {
+    const suffix = path === '/' ? '' : path;
+    return Response.redirect(`https://test.lunarlab.uk/mf01sm${suffix}${url.search}`, 308);
+  }
   if (isMirrorHostname(host)) return mirrorCompatibilityRoute(request, env, host);
   if (!ALLOWED_HOSTS.has(host)) throw new HttpError(421, 'host is not served here');
 
-  const path = url.pathname.replace(/\/{2,}/g, '/');
+  if (host === 'lunarlab.uk') {
+    if (path === '/' && request.method === 'GET') return html(visitorHomePage());
+    if (path === '/test' && request.method === 'GET') return Response.redirect('https://test.lunarlab.uk/', 308);
+    const oldPublicTest = path.match(/^\/test\/([A-Za-z0-9\u4e00-\u9fff-]{1,96})$/);
+    if (oldPublicTest && request.method === 'GET') return Response.redirect(`https://test.lunarlab.uk/${oldPublicTest[1]}${url.search}`, 308);
+    if (path.startsWith('/app/') && request.method === 'GET') return Response.redirect(`https://20100823.xyz${path}${url.search}`, 308);
+  }
+
+  if (host === 'test.lunarlab.uk') {
+    requireSameOrigin(request);
+    if (path === '/mf01sm') return legacyMf01sm(request, env, '/');
+    if (path.startsWith('/mf01sm/')) return legacyMf01sm(request, env, path.slice('/mf01sm'.length) || '/');
+    if (path === '/api/save' || path === '/api/admin/data' || path === '/admin') return legacyMf01sm(request, env, path);
+  }
+
   const profile = siteProfile(request, env);
   requireSameOrigin(request);
 
@@ -267,11 +299,18 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (path === '/assets/test-studio.js' && request.method === 'GET') return asset(TEST_STUDIO_JS, 'text/javascript; charset=utf-8');
   if (path === '/assets/test-runner.js' && request.method === 'GET') return asset(TEST_RUNNER_JS, 'text/javascript; charset=utf-8');
   if (path === '/icon.svg' && request.method === 'GET') return icon(profile.accent);
-  if (path === '/' && request.method === 'GET') return html(homeWithTest(appPage(profile, path)));
+  if (path === '/' && request.method === 'GET') {
+    if (host === 'test.lunarlab.uk') return html(testDirectoryPage('Lunar Lab Test'));
+    return html(homeWithTest(appPage(profile, path)));
+  }
   if (path === '/healthz' && request.method === 'GET') return json({ ok: true });
   if (path === '/test' && request.method === 'GET') return html(testDirectoryPage(profile.name));
   const publicTestPage = path.match(/^\/test\/([A-Za-z0-9\u4e00-\u9fff-]{1,96})$/);
   if (publicTestPage && request.method === 'GET') return html(testRunPage(profile.name, publicTestPage[1]!), 200, { 'x-cf-one-test-sandbox': '1' });
+  if (host === 'test.lunarlab.uk') {
+    const shortPublicTest = path.match(/^\/([A-Za-z0-9\u4e00-\u9fff-]{1,96})$/);
+    if (shortPublicTest && request.method === 'GET') return html(testRunPage('Lunar Lab Test', shortPublicTest[1]!), 200, { 'x-cf-one-test-sandbox': '1' });
+  }
   if (path === '/app/test' && request.method === 'GET') return html(testStudioPage(profile.name));
   if (path === '/manifest.webmanifest' && request.method === 'GET') {
     return json({

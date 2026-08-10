@@ -85,6 +85,7 @@ const config = {
   routes: domains.map(pattern => ({ pattern, custom_domain: true })),
   d1_databases: [{ binding: 'DB', database_name: databaseName, database_id: databaseId, migrations_dir: 'migrations' }],
   kv_namespaces: [{ binding: 'CACHE', id: kvId }],
+  services: [{ binding: 'LEGACY_MF01SM', service: 'mf01sm' }],
   ratelimits: [
     { name: 'STORAGE_USER_RATE_LIMITER', namespace_id: '2010082301', simple: { limit: 180, period: 60 } },
     { name: 'STORAGE_GLOBAL_RATE_LIMITER', namespace_id: '2010082302', simple: { limit: 3000, period: 60 } }

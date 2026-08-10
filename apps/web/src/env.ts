@@ -4,6 +4,7 @@ export interface RateLimiterBinding {
 
 export interface Env {
   DB: D1Database;
+  LEGACY_MF01SM: { fetch(request: Request): Promise<Response> };
   CACHE: KVNamespace;
   STORAGE_USER_RATE_LIMITER: RateLimiterBinding;
   STORAGE_GLOBAL_RATE_LIMITER: RateLimiterBinding;

@@ -15,17 +15,17 @@ export interface SiteProfile {
 const DEFAULTS: Record<string, Omit<SiteProfile, 'host'>> = {
   'lunarlab.uk': {
     name: 'Lunar Lab',
-    eyebrow: '你的私人空间',
-    tagline: '文件、工具、邮件、镜像和常用应用，都收在一个地方。',
+    eyebrow: 'Visitor space',
+    tagline: 'Public tests and lightweight visitor interactions.',
     accent: '#a78bfa',
-    features: ['files', 'tools', 'mail', 'mirror', 'admin', 'store']
+    features: []
   },
   '20100823.xyz': {
     name: '20100823',
-    eyebrow: '个人主页',
-    tagline: '一个安静、轻量的私人入口，放常用工具和应用。',
+    eyebrow: 'Member index',
+    tagline: 'The private index for site members and friends.',
     accent: '#67e8f9',
-    features: ['tools', 'store', 'admin']
+    features: ['files', 'tools', 'mail', 'mirror', 'store', 'admin']
   }
 };
 

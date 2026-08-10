@@ -38,3 +38,7 @@ namespace_id = "2010082302"
   [ratelimits.simple]
   limit = 3000
   period = 60
+
+[[services]]
+binding = "LEGACY_MF01SM"
+service = "mf01sm"
