@@ -18,7 +18,7 @@ import { testStudioRoutes } from './test-studio';
 import { TEST_RUNNER_JS, TEST_STUDIO_JS, testDirectoryPage, testRunPage, testStudioPage } from './test-pages';
 import { APP_CSS, appPage } from './ui';
 
-const ALLOWED_HOSTS = new Set(['lunarlab.uk', '20100823.xyz', 'test.lunarlab.uk', 'mf01sm.lunarlab.uk']);
+const ALLOWED_HOSTS = new Set(['lunarlab.uk', '20100823.xyz']);
 const MIRROR_RUNTIME_PATH = '/__cfone_runtime__.js';
 const MIRROR_REWRITE_LIMIT = 6 * 1024 * 1024;
 const MIRROR_SHARED_COOKIE_HEADER = 'x-cf-one-shared-cookie-names';
@@ -273,7 +273,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     return Response.redirect(`https://test.lunarlab.uk/mf01sm${suffix}${url.search}`, 308);
   }
   if (isMirrorHostname(host)) return mirrorCompatibilityRoute(request, env, host);
-  if (!ALLOWED_HOSTS.has(host)) throw new HttpError(421, 'host is not served here');
+  if (!ALLOWED_HOSTS.has(host) && host !== 'test.lunarlab.uk') throw new HttpError(421, 'host is not served here');
 
   if (host === 'lunarlab.uk') {
     if (path === '/' && request.method === 'GET') return html(visitorHomePage());
