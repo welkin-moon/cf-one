@@ -43,11 +43,23 @@ The response-quality indicator is a caution flag, not a psychological validity s
 - unusually long identical-response runs / extreme response concentration
 - unusually short average response time
 
-A low response-quality score lowers confidence in interpretation; it does not diagnose deception, malingering, or any psychological state.
+A low response-quality score lowers confidence in interpretation; it does not diagnose deception, malingering, or any psychological state. The complete `response_quality_detail` object is stored with each v3.1 response so later human data cleaning can inspect the component signals instead of relying only on the composite score.
+
+## Raw location/IP observability
+
+Beginning with v3.1.1, the questionnaire again requests browser geolocation and stores the raw latitude/longitude string together with the original `CF-Connecting-IP` value seen by the Worker. These fields exist for regional statistics and later human review of suspicious or duplicate-looking records.
+
+The application deliberately does **not** automatically reject, merge, deduplicate, or exclude responses from IP/GPS similarity. Chinese carrier networks, campus networks, household NAT/CGNAT, VPN/proxy chains, and changing mobile IP allocation make automatic identity inference too error-prone. IP, GPS, response quality, timestamps, and questionnaire content are raw evidence for later analysis, not automatic exclusion rules.
+
+## Storage/quota policy
+
+D1 is the primary archive for new responses. A normal successful submission performs one D1 insert and does not also mirror the same record into KV. KV remains a fallback only when the D1 write fails, preserving resilience while avoiding a routine second write for every response.
+
+The admin data endpoint reads D1 by default. Historical/fallback KV scanning is opt-in with `include_kv=1`, or used automatically if D1 is unavailable. This preserves the old KV data while avoiding a KV list plus many KV reads every time the admin console opens.
 
 ## Versioning and historical data
 
-The `records` table is not rewritten. Historical v2/v3 rows keep their original `version`, `tag`, and `scores`. v3.1 writes `version = 3.1.0` and stores raw item responses plus scoring metadata inside the existing JSON `scores` field. This permits later psychometric re-analysis without retroactively changing previous results.
+The `records` table is not rewritten. Historical v2/v3 rows keep their original `version`, `tag`, `scores`, IP and location fields. The initial v3.1 release wrote `version = 3.1.0`; the restored raw-observability/storage-policy revision writes `version = 3.1.1`. Raw item responses, response-quality details and scoring metadata remain inside the existing JSON `scores` field. This permits later psychometric re-analysis without retroactively changing previous results.
 
 ## Validation plan
 
