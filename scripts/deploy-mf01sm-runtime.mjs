@@ -85,8 +85,8 @@ try {
 
   const bundlePath = await findJavaScript(outDirectory);
   const source = await readFile(bundlePath, 'utf8');
-  if (!source.includes('3.2.1') || !source.includes('assigned-sex-v3.2-expanded-profile') || !source.includes('questionnaire schema/version mismatch') || !source.includes('run_thresholds') || !source.includes('response_quality_detail') || !source.includes('CF-Connecting-IP')) {
-    throw new Error('mf01sm runtime bundle is missing v3.2.1 integrity markers; refusing to deploy.');
+  if (!source.includes('3.3.0') || !source.includes('assigned-sex-v3.3-expanded-profile') || !source.includes('multi_partner') || !source.includes('self_identity_comparison') || !source.includes('questionnaire schema/version mismatch') || !source.includes('run_thresholds') || !source.includes('response_quality_detail') || !source.includes('CF-Connecting-IP')) {
+    throw new Error('mf01sm runtime bundle is missing v3.3.0 integrity markers; refusing to deploy.');
   }
 
   const scriptName = 'mf01sm';
@@ -102,8 +102,8 @@ try {
     compatibility_flags: settings?.compatibility_flags || [],
     bindings: bindingNames.map(name => ({ type: 'inherit', name, version_id: 'latest' })),
     annotations: {
-      'workers/tag': `mf01sm-v3.2.1-${Date.now().toString(36)}`,
-      'workers/message': 'mf01sm v3.2.1 schema-gated expanded profile runtime'
+      'workers/tag': `mf01sm-v3.3.0-${Date.now().toString(36)}`,
+      'workers/message': 'mf01sm v3.3.0 richer self-ID and relationship profile runtime'
     }
   };
 
@@ -118,11 +118,11 @@ try {
     body: JSON.stringify({
       strategy: 'percentage',
       versions: [{ percentage: 100, version_id: version.id }],
-      annotations: { 'workers/message': 'mf01sm v3.2.1 schema-gated expanded profile runtime' }
+      annotations: { 'workers/message': 'mf01sm v3.3.0 richer self-ID and relationship profile runtime' }
     })
   });
   if (!deployment?.id) throw new Error('Cloudflare created no mf01sm runtime deployment id.');
-  console.log(`mf01sm v3.2.1 runtime ${version.id} deployed at 100%; schema-gated versioning, expanded profile scoring and D1-primary/KV-fallback storage are active.`);
+  console.log(`mf01sm v3.3.0 runtime ${version.id} deployed at 100%; schema-gated versioning, richer self-ID comparison and split relationship-structure scoring are active.`);
 } finally {
   await rm(outDirectory, { recursive: true, force: true });
 }
