@@ -4,12 +4,12 @@ import path from 'node:path';
 
 const { outputPath, mf01smOutputPath } = await import('./provision-cloudflare.mjs');
 const webDirectory = path.dirname(outputPath);
-const mf01smConfigPath = path.relative(webDirectory, mf01smOutputPath).replaceAll('\\', '/');
+const rootDirectory = path.resolve(webDirectory, '../..');
 
-function run(arguments_) {
+function run(arguments_, cwd = webDirectory) {
   return new Promise((resolve, reject) => {
     const child = spawn('pnpm', ['exec', 'wrangler', ...arguments_], {
-      cwd: webDirectory,
+      cwd,
       env: process.env,
       stdio: 'inherit'
     });
@@ -94,13 +94,13 @@ await run(['d1', 'migrations', 'apply', process.env.CF_ONE_D1_NAME?.trim() || 'c
 const generatedConfig = JSON.parse(await readFile(outputPath, 'utf8'));
 await reconcileMirrorDomains(generatedConfig);
 
-// mf01sm now lives in this repository but deliberately keeps its historical
-// D1/KV bindings. Upload a code version first; only route traffic after the
-// Worker bundle has compiled successfully. keep_vars preserves the existing
-// ADMIN runtime variable without checking it into git.
+// Run auxiliary Worker commands from the repository root, not apps/web. The
+// web build may create .wrangler/deploy/config.json and Wrangler intentionally
+// follows that generated config for versions commands. An isolated cwd plus an
+// explicit Worker name prevents mf01sm uploads from inheriting the apex target.
 const mf01smVersionTag = `mf01sm-v3-${Date.now().toString(36)}`;
-await run(['versions', 'upload', '--config', mf01smConfigPath, '--tag', mf01smVersionTag, '--message', 'mf01sm v3 automated build']);
-await run(['versions', 'deploy', '--config', mf01smConfigPath, '--version-tag', mf01smVersionTag, '--yes', '--message', 'mf01sm v3 automated build']);
+await run(['versions', 'upload', '--config', mf01smOutputPath, '--name', 'mf01sm', '--tag', mf01smVersionTag, '--message', 'mf01sm v3 automated build'], rootDirectory);
+await run(['versions', 'deploy', '--config', mf01smOutputPath, '--name', 'mf01sm', '--version-tag', mf01smVersionTag, '--yes', '--message', 'mf01sm v3 automated build'], rootDirectory);
 console.log(`mf01sm version ${mf01smVersionTag} deployed from cf-one repository; historical D1/KV bindings were retained.`);
 
 // Code/config versions and traffic deployments are deliberately separated from
