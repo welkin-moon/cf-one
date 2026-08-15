@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const { outputPath, mf01smOutputPath } = await import('./provision-cloudflare.mjs');
+const { outputPath } = await import('./provision-cloudflare.mjs');
 const webDirectory = path.dirname(outputPath);
 const rootDirectory = path.resolve(webDirectory, '../..');
 
@@ -24,12 +24,28 @@ if (!accountId || !/^[a-f0-9]{32}$/i.test(accountId) || !token) {
   throw new Error('Cloudflare build credentials are unavailable.');
 }
 
+const apiRoot = 'https://api.cloudflare.com/client/v4';
+
 async function api(endpoint, init = {}) {
   const headers = new Headers(init.headers);
   headers.set('authorization', `Bearer ${token}`);
   headers.set('accept', 'application/json');
   if (init.body) headers.set('content-type', 'application/json');
-  const response = await fetch(`https://api.cloudflare.com/client/v4${endpoint}`, { ...init, headers });
+  const response = await fetch(`${apiRoot}${endpoint}`, { ...init, headers });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body?.success) {
+    const errors = body?.errors?.map(error => `${error.code ?? 'unknown'}: ${error.message ?? 'Cloudflare API error'}`).join('; ');
+    throw new Error(`Cloudflare API ${response.status} for ${endpoint}${errors ? `: ${errors}` : ''}`);
+  }
+  return body.result;
+}
+
+async function apiForm(endpoint, form) {
+  const response = await fetch(`${apiRoot}${endpoint}`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
+    body: form
+  });
   const body = await response.json().catch(() => null);
   if (!response.ok || !body?.success) {
     const errors = body?.errors?.map(error => `${error.code ?? 'unknown'}: ${error.message ?? 'Cloudflare API error'}`).join('; ');
@@ -90,18 +106,54 @@ async function reconcileMirrorDomains(config) {
   console.log(`Mirror-domain reconciliation complete: ${active.length} active, ${repaired} repaired.`);
 }
 
+async function deployMf01sm() {
+  const scriptName = 'mf01sm';
+  const source = await readFile(path.join(rootDirectory, 'apps/mf01sm/src/index.js'), 'utf8');
+  const settings = await api(`/accounts/${accountId}/workers/scripts/${scriptName}/settings`);
+  const bindingNames = Array.isArray(settings?.bindings) ? settings.bindings.map(binding => String(binding?.name || '')).filter(Boolean) : [];
+  if (!bindingNames.includes('mf01sm') || !bindingNames.includes('mf01smsql')) {
+    throw new Error('mf01sm historical KV/D1 bindings are missing; refusing to deploy a version that could fork storage.');
+  }
+  if (!bindingNames.includes('ADMIN')) {
+    throw new Error('mf01sm ADMIN runtime binding is missing; refusing to deploy and break the historical data console.');
+  }
+
+  const tag = `mf01sm-v3-${Date.now().toString(36)}`;
+  const metadata = {
+    main_module: 'worker.js',
+    compatibility_date: settings?.compatibility_date || '2026-05-07',
+    compatibility_flags: settings?.compatibility_flags || [],
+    bindings: bindingNames.map(name => ({ type: 'inherit', name, version_id: 'latest' })),
+    annotations: {
+      'workers/tag': tag,
+      'workers/message': 'mf01sm v3 automated build'
+    }
+  };
+  const form = new FormData();
+  form.set('metadata', JSON.stringify(metadata));
+  form.set('worker.js', new Blob([source], { type: 'application/javascript+module' }), 'worker.js');
+
+  // Workers Builds pins Wrangler to its connected Worker. Use the REST path so
+  // the auxiliary version is unambiguously created under the mf01sm service.
+  const version = await apiForm(`/accounts/${accountId}/workers/scripts/${scriptName}/versions?bindings_inherit=strict`, form);
+  if (!version?.id) throw new Error('Cloudflare uploaded mf01sm but returned no version id.');
+
+  const deployment = await api(`/accounts/${accountId}/workers/scripts/${scriptName}/deployments`, {
+    method: 'POST',
+    body: JSON.stringify({
+      strategy: 'percentage',
+      versions: [{ percentage: 100, version_id: version.id }],
+      annotations: { 'workers/message': 'mf01sm v3 automated build' }
+    })
+  });
+  if (!deployment?.id) throw new Error('Cloudflare created no mf01sm deployment id.');
+  console.log(`mf01sm version ${version.id} deployed at 100%; historical bindings inherited from the previous version.`);
+}
+
 await run(['d1', 'migrations', 'apply', process.env.CF_ONE_D1_NAME?.trim() || 'cf-one', '--remote', '--config', 'wrangler.generated.jsonc']);
 const generatedConfig = JSON.parse(await readFile(outputPath, 'utf8'));
 await reconcileMirrorDomains(generatedConfig);
-
-// Run auxiliary Worker commands from the repository root, not apps/web. The
-// web build may create .wrangler/deploy/config.json and Wrangler intentionally
-// follows that generated config for versions commands. An isolated cwd plus an
-// explicit Worker name prevents mf01sm uploads from inheriting the apex target.
-const mf01smVersionTag = `mf01sm-v3-${Date.now().toString(36)}`;
-await run(['versions', 'upload', '--config', mf01smOutputPath, '--name', 'mf01sm', '--tag', mf01smVersionTag, '--message', 'mf01sm v3 automated build'], rootDirectory);
-await run(['versions', 'deploy', '--config', mf01smOutputPath, '--name', 'mf01sm', '--version-tag', mf01smVersionTag, '--yes', '--message', 'mf01sm v3 automated build'], rootDirectory);
-console.log(`mf01sm version ${mf01smVersionTag} deployed from cf-one repository; historical D1/KV bindings were retained.`);
+await deployMf01sm();
 
 // Code/config versions and traffic deployments are deliberately separated from
 // Worker triggers. `wrangler deploy` synchronizes configured routes/custom
