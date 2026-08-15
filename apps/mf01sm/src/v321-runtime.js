@@ -45,8 +45,14 @@ function validV32Scores(scores) {
   return true;
 }
 
+function validV321Scores(scores) {
+  if (!validV32Scores(scores)) return false;
+  const thresholds = parseObject(parseObject(scores.response_quality_detail).run_thresholds);
+  return thresholds.mild === 16 && thresholds.mid === 21 && thresholds.severe === 28;
+}
+
 function resolveRecordVersion(declaredVersion, scores) {
-  if (declaredVersion === VERSION) return validV32Scores(scores) ? VERSION : '';
+  if (declaredVersion === VERSION) return validV321Scores(scores) ? VERSION : '';
   if (declaredVersion === '3.2.0') {
     if (validV32Scores(scores)) return '3.2.0';
     if (scores._schema === V31_SCHEMA) return '3.1.1';
