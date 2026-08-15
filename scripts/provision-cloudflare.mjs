@@ -4,6 +4,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outputPath = path.join(root, 'apps/web/wrangler.generated.jsonc');
+const mf01smOutputPath = path.join(root, 'apps/mf01sm/wrangler.generated.jsonc');
 const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
 const token = process.env.CLOUDFLARE_API_TOKEN?.trim();
 
@@ -73,7 +74,14 @@ if (domains.length !== 2 || new Set(domains).size !== 2 || domains.some(domain =
 }
 if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(workerName)) throw new Error('CF_ONE_WORKER_NAME is invalid.');
 
-const [databaseId, kvId, r2Bucket] = await Promise.all([ensureD1(databaseName), ensureKv(kvTitle), ensureR2(bucketName)]);
+const [databaseId, kvId, r2Bucket, mf01smDatabaseId, mf01smKvId] = await Promise.all([
+  ensureD1(databaseName),
+  ensureKv(kvTitle),
+  ensureR2(bucketName),
+  ensureD1('mf01sm'),
+  ensureKv('mf01sm')
+]);
+
 const config = {
   $schema: '../../node_modules/wrangler/config-schema.json',
   name: workerName,
@@ -93,13 +101,30 @@ const config = {
   ...(r2Bucket ? { r2_buckets: [{ binding: 'MEDIA', bucket_name: r2Bucket }] } : {}),
   observability: { enabled: true, head_sampling_rate: 1 }
 };
+
+const mf01smConfig = {
+  $schema: '../../node_modules/wrangler/config-schema.json',
+  name: 'mf01sm',
+  main: 'src/index.js',
+  compatibility_date: '2026-05-07',
+  workers_dev: false,
+  keep_vars: true,
+  d1_databases: [{ binding: 'mf01smsql', database_name: 'mf01sm', database_id: mf01smDatabaseId }],
+  kv_namespaces: [{ binding: 'mf01sm', id: mf01smKvId }],
+  observability: { enabled: true, head_sampling_rate: 1 }
+};
+
 if (process.env.CF_ONE_ENABLE_EMAIL_SEND === '1') {
   const destinations = (process.env.CF_ONE_EMAIL_DESTINATIONS || '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
   if (!destinations.length) throw new Error('CF_ONE_EMAIL_DESTINATIONS must list verified Cloudflare destination addresses when free-tier sending is enabled.');
   config.send_email = [{ name: 'EMAIL', allowed_destination_addresses: destinations, remote: true }];
 }
 
-await writeFile(outputPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
-console.log(`Prepared ${path.relative(root, outputPath)} for apex-only Worker ${workerName}; D1 ${databaseId}, KV ${kvId}, R2 ${r2Bucket ?? 'disabled'}. Runtime variables remain dashboard-managed.`);
+await Promise.all([
+  writeFile(outputPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 }),
+  writeFile(mf01smOutputPath, `${JSON.stringify(mf01smConfig, null, 2)}\n`, { mode: 0o600 })
+]);
+console.log(`Prepared ${path.relative(root, outputPath)} for apex-only Worker ${workerName}; D1 ${databaseId}, KV ${kvId}, R2 ${r2Bucket ?? 'disabled'}.`);
+console.log(`Prepared ${path.relative(root, mf01smOutputPath)} for versioned mf01sm Worker; legacy D1 ${mf01smDatabaseId}, KV ${mf01smKvId}. Runtime variables remain dashboard-managed.`);
 
-export { outputPath };
+export { outputPath, mf01smOutputPath };
