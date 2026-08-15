@@ -9,7 +9,7 @@
     "cf:deploy": "pnpm check && node scripts/deploy-cloudflare.mjs",
     "typecheck": "pnpm --dir apps/web typecheck",
     "test:security": "node scripts/security-regressions.mjs && node scripts/storage-regressions.mjs",
-    "check": "pnpm test:security && pnpm typecheck && pnpm --dir apps/web dry-run",
+    "check": "pnpm test:security && pnpm typecheck && pnpm --dir apps/web dry-run && pnpm --dir apps/web exec wrangler deploy --dry-run --config ../mf01sm/wrangler.toml",
     "db:migrate:local": "pnpm --dir apps/web db:migrate:local",
     "db:migrate:remote": "pnpm --dir apps/web db:migrate:remote"
   }
