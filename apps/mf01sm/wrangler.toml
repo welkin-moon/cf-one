@@ -1,0 +1,14 @@
+name = "mf01sm"
+main = "src/index.js"
+compatibility_date = "2026-05-07"
+workers_dev = false
+keep_vars = true
+
+[[d1_databases]]
+binding = "mf01smsql"
+database_name = "mf01sm"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[kv_namespaces]]
+binding = "mf01sm"
+id = "00000000000000000000000000000000"
