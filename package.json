@@ -6,7 +6,7 @@
     "dev": "pnpm --dir apps/web dev",
     "deploy": "pnpm cf:deploy",
     "cf:provision": "node scripts/provision-cloudflare.mjs",
-    "cf:deploy": "pnpm check && node scripts/deploy-cloudflare.mjs",
+    "cf:deploy": "pnpm check && node scripts/deploy-cloudflare.mjs && node scripts/deploy-mf01sm-runtime.mjs",
     "typecheck": "pnpm --dir apps/web typecheck",
     "test:security": "node scripts/security-regressions.mjs && node scripts/storage-regressions.mjs",
     "check": "pnpm test:security && pnpm typecheck && pnpm --dir apps/web dry-run && pnpm --dir apps/web exec wrangler deploy --dry-run --cwd ../mf01sm --config wrangler.toml --name mf01sm",
