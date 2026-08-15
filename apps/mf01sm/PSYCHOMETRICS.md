@@ -1,82 +1,123 @@
-# mf01sm v3.1 measurement notes
+# mf01sm v3.2 measurement notes
 
-mf01sm is an exploratory self-report questionnaire, not a clinical diagnostic instrument. Version 3.1 deliberately keeps continuous scores primary and uses direction labels only as cautious summaries when differences are large enough to be interpretable.
+mf01sm is an exploratory self-report questionnaire, not a clinical diagnostic instrument. Version 3.2 keeps continuous scores primary, expands the construct set, and explicitly stores comparable self-ratings so later analysis can study the relationship between identity/self-description and questionnaire responses without treating disagreement as error.
 
 ## Constructs
 
-The scored items are split into nine subscales:
+v3.2 contains 58 questionnaire items: 56 scored items and two instructed-response quality checks. Scored items are distributed across 16 subscales:
 
 - assigned-sex-aligned gender direction
 - cross-assigned gender direction
 - nonbinary fit
+- masculine gender expression
+- feminine gender expression
 - romantic attraction to men
 - romantic attraction to women
+- romantic attraction to nonbinary/gender-diverse people
 - physical/sexual attraction to men
 - physical/sexual attraction to women
+- physical/sexual attraction to nonbinary/gender-diverse people
+- libido / sexual drive
+- desire for a romantic relationship itself
+- consensual relationship openness preference
 - interpersonal initiative
 - decision autonomy
 
-Sex assigned at birth (AMAB/AFAB) is collected separately from current gender identity. It is used only to translate male/female direction scores into “same-assigned-sex” and “other-assigned-sex” wording and for legacy compatibility fields. It does not determine the respondent's gender identity or orientation label.
+Sex assigned at birth (AMAB/AFAB) remains separate from current gender identity. Current gender identity is collected as a spectrum position plus optional identity labels such as trans, nonbinary, genderqueer, genderfluid, agender, questioning, and free text. These identity labels are not scored as questionnaire answers.
 
-Romantic attraction and physical/sexual attraction are intentionally separate. Current SSOGI measurement literature treats sexual orientation as multidimensional (commonly identity, attraction, and behavior), and the literature reviewed for v3.1 also documents measures that distinguish sexual, romantic, emotional, or social attraction. The respondent's orientation identity therefore remains a self-report variable rather than a score-derived label.
+Gender expression is explicitly separate from gender identity. Masculine and feminine expression are retained as two raw subscales rather than forcing every respondent onto one bipolar score. A convenience `expression_position` composite is also stored for comparison with the self-rated masculine-to-feminine expression axis; it is not a replacement for the two raw scores.
+
+Romantic attraction and physical/sexual attraction remain separate and v3.2 adds a nonbinary/gender-diverse target direction to the existing male/female directions. Libido is measured separately from target-specific physical/sexual attraction, and general desire for a romantic relationship is measured separately from attraction to particular genders.
+
+The relationship-structure construct is named `relationship_openness`, not “social intimacy”. It measures preference/acceptance for consensually negotiated non-exclusive relationship structures versus a more exclusive one-to-one preference. It does not infer current behavior, fidelity, number of partners, or relationship status.
+
+## Baseline self-report and self-test comparison
+
+The baseline section separately records:
+
+- assigned sex at birth
+- current gender position and optional identity labels
+- sexual/physical-attraction orientation identity
+- romantic-orientation identity
+- gender-identity stability
+- confidence in orientation identity
+- stability of attraction direction
+- self-rated gender-expression position
+- self-rated overall physical/sexual-attraction intensity
+- self-rated libido
+- self-rated desire for a romantic relationship
+- self-rated relationship-structure preference
+
+Where a baseline self-rating and a questionnaire score can reasonably share a 0–100 axis, v3.2 stores both values and the absolute difference in `scores.self_test_comparison`. The mean absolute difference is a descriptive convergence statistic only. It must not be interpreted as honesty, validity, diagnostic agreement, or a reason to exclude a response.
+
+Categorical identity labels remain separate variables. The application does not automatically convert questionnaire scores into labels such as trans, cis, gay, bi/pan, ace, aromantic, monogamous, or polyamorous.
 
 ## Item construction
 
-Items are short, single-idea statements on a five-point agreement scale. Items from different subscales are interleaved. Version 3.1 removes the broad reverse-keying used in v3.0 because reverse/negated items can introduce wording-method variance, confusion, and artificial factor structure. A smaller set of semantically parallel items is used for response-consistency checks without reversing the scoring direction.
+Items are short, single-idea statements on a five-point agreement scale. Items from different subscales are interleaved. Broad mechanical reverse-wording remains avoided because wording reversal can add method variance and confusion. Selected semantically parallel item pairs are used only as one component of the response-quality indicator.
 
-No MMPI, Transgender Congruence Scale, Kinsey, Klein, or other proprietary/validated scale items are copied. Those instruments and the psychometric literature are used only to inform measurement architecture and validation strategy.
+No MMPI, Transgender Congruence Scale, Kinsey, Klein, Sexual Desire Inventory, or other proprietary/validated instrument items are copied. Published measurement research is used to define construct boundaries and validation strategy; mf01sm uses its own wording and remains an unvalidated exploratory instrument until local validation is completed.
 
 ## Scoring
 
-Each subscale is currently an unweighted mean of its items, linearly mapped from 1–5 to 0–100. Equal item weights are intentional until enough local v3.1 data exist to justify a different model empirically.
+Each subscale is an unweighted mean of its 1–5 item responses mapped linearly to 0–100. Equal item weights remain intentional until enough local v3.2 data exist to justify another model empirically.
 
-The result screen uses exploratory thresholds only to summarize strong patterns. These thresholds are not population norms, clinical cutoffs, or validated classification rules. Raw continuous subscale scores are always retained in `scores`.
+Convenience composites added in v3.2 include:
 
-Legacy fields (`m`, `f`, `attr_m`, `attr_f`, `agender`, `ace`, `top`, `bot`, `d`, `s`, `trans`, `pan`, `validity`) remain compatibility composites for old admin/statistical tooling. New code should prefer the v3.1 subscales.
+- `expression_position = 50 + (expression_fem - expression_masc) / 2`, clamped to 0–100
+- `expression_balance = 100 - abs(expression_fem - expression_masc)`
+- `phys_overall = max(phys_m, phys_f, phys_nb)`
+- `rom_overall = max(rom_m, rom_f, rom_nb)`
+
+`expression_position` is useful for comparing with the baseline masculine-to-feminine self-rating, but analysis should retain `expression_masc` and `expression_fem` because equal midpoint values can arise from very different profiles.
+
+Legacy compatibility fields (`m`, `f`, `attr_m`, `attr_f`, `agender`, `ace`, `top`, `bot`, `d`, `s`, `trans`, `pan`, `validity`) remain for old tooling. New analysis should use the v3.2 subscales. In v3.2 the legacy `ace` convenience field is derived from `100 - phys_overall`; it remains a compatibility proxy and must not be treated as an asexual identity classifier.
 
 ## Response quality
 
-The response-quality indicator is a caution flag, not a psychological validity scale. It combines several weak signals rather than relying on one attention check:
+The response-quality indicator remains a caution flag, not a psychological validity scale. It combines:
 
 - two instructed-response checks
-- consistency of closely matched semantic item pairs
+- consistency of selected semantically parallel item pairs
 - unusually long identical-response runs / extreme response concentration
 - unusually short average response time
 
-A low response-quality score lowers confidence in interpretation; it does not diagnose deception, malingering, or any psychological state. The complete `response_quality_detail` object is stored with each v3.1 response so later human data cleaning can inspect the component signals instead of relying only on the composite score.
+The expanded item set contributes additional semantic-pair information while retaining the same multi-signal architecture. `response_quality_detail` stores attention, pair, pattern, speed, milliseconds per item, longest run, and maximum option share.
 
 ## Raw location/IP observability
 
-Beginning with v3.1.1, the questionnaire again requests browser geolocation and stores the raw latitude/longitude string together with the original `CF-Connecting-IP` value seen by the Worker. These fields exist for regional statistics and later human review of suspicious or duplicate-looking records.
+Raw browser geolocation and the `CF-Connecting-IP` value seen by the Worker remain stored for regional statistics and later human review of suspicious or duplicate-looking records.
 
-The application deliberately does **not** automatically reject, merge, deduplicate, or exclude responses from IP/GPS similarity. Chinese carrier networks, campus networks, household NAT/CGNAT, VPN/proxy chains, and changing mobile IP allocation make automatic identity inference too error-prone. IP, GPS, response quality, timestamps, and questionnaire content are raw evidence for later analysis, not automatic exclusion rules.
+The application deliberately does **not** automatically reject, merge, deduplicate, or exclude responses from IP/GPS similarity. Carrier networks, campus networks, household NAT/CGNAT, VPN/proxy chains, and mobile IP reassignment make automatic identity inference too error-prone. IP, GPS, timestamps, response quality, self-report variables, and item responses are evidence for later human analysis, not automatic exclusion rules.
 
 ## Storage/quota policy
 
-D1 is the primary archive for new responses. A normal successful submission performs one D1 insert and does not also mirror the same record into KV. KV remains a fallback only when the D1 write fails, preserving resilience while avoiding a routine second write for every response.
-
-The admin data endpoint reads D1 by default. Historical/fallback KV scanning is opt-in with `include_kv=1`, or used automatically if D1 is unavailable. This preserves the old KV data while avoiding a KV list plus many KV reads every time the admin console opens.
+D1 remains the primary archive. A successful v3.2 submission performs one D1 insert and no routine KV mirror write. KV is used only as a failure fallback. The admin endpoint remains D1-only by default; legacy/fallback KV scanning is opt-in with `include_kv=1` or used when D1 is unavailable.
 
 ## Versioning and historical data
 
-The `records` table is not rewritten. Historical v2/v3 rows keep their original `version`, `tag`, `scores`, IP and location fields. The initial v3.1 release wrote `version = 3.1.0`; the restored raw-observability/storage-policy revision writes `version = 3.1.1`. Raw item responses, response-quality details and scoring metadata remain inside the existing JSON `scores` field. This permits later psychometric re-analysis without retroactively changing previous results.
+The `records` table is not rewritten. Historical rows keep their original `version`, `tag`, `scores`, IP, location, and self-report values.
+
+- v3.1.0: initial multidimensional 34-item release
+- v3.1.1: raw IP/GPS restoration and D1-primary/KV-fallback storage policy
+- v3.2.0: 58-item expanded profile with gender expression, nonbinary-target attraction, libido, romantic desire, relationship openness, expanded baseline self-report, and self-test comparison metadata
+
+v3.2 rows use `_schema = 'assigned-sex-v3.2-expanded-profile'`. Raw answers remain in `_answers`; comparable baseline variables are also copied to `_self_report` for analysis convenience.
 
 ## Validation plan
 
-After enough genuine v3.1 responses accumulate, validation should proceed before tightening thresholds or claiming reliability:
+v3.1 and v3.2 must not be pooled as if they were the same questionnaire without explicit version handling. For genuine v3.2 data:
 
-1. inspect missingness, response-quality flags, item distributions, floor/ceiling effects, and item-rest correlations;
-2. estimate internal consistency with omega (and alpha only as a familiar secondary statistic), using the hypothesized subscales rather than one global score;
-3. examine the factor structure with EFA/CFA and explicitly test whether romantic and physical/sexual attraction remain separable;
-4. test measurement invariance / differential item functioning across relevant groups, especially AMAB/AFAB and gender-identity groups, before comparing group means;
-5. compare questionnaire scores with the separate self-report identity items for convergent/discriminant evidence without treating disagreement as respondent error;
-6. revise or remove weak/cross-loading items and increment the questionnaire version rather than silently changing scoring for old records.
+1. inspect response-quality flags, item distributions, floor/ceiling effects, and corrected item-rest correlations;
+2. estimate omega for each hypothesized subscale, with alpha only as a secondary familiar statistic;
+3. use EFA/CFA to test the expanded factor structure, especially masculine vs feminine expression, romantic vs physical attraction, libido vs attraction intensity, and romantic desire vs target-specific romantic attraction;
+4. test whether male/female/nonbinary target attraction factors are empirically separable or better represented by a different model;
+5. evaluate relationship-openness items for one-dimensionality before interpreting that score as a single continuum;
+6. compare numeric self-ratings with matched questionnaire scores as convergent evidence, reporting distributions of signed and absolute gaps rather than treating disagreement as invalidity;
+7. compare categorical self-identities with continuous questionnaire profiles descriptively and with appropriate group-size safeguards;
+8. test measurement invariance / DIF across assigned-sex and gender-identity groups before comparing group means;
+9. revise weak or cross-loading items in a new version rather than silently rescoring historical records.
 
-## Research basis reviewed for v3.1
+## Research basis
 
-- *Sex, Sexual Orientation, and Gender Identity Measurement in Health Research: A Systematic Review and Narrative Synthesis* (2025).
-- Tordoff et al., *Comparing Two-Step Approaches to Measuring Gender Identity* (American Journal of Epidemiology, 2025).
-- *Psychological, psychiatric, and behavioral sciences measurement scales: best practice guidelines for their development and validation* (2025).
-- van Sonderen et al., *Ineffectiveness of Reverse Wording of Questionnaire Items* (2013), plus later wording-effect research.
-- validation studies of the Transgender Congruence Scale, including Chinese-language and cross-group factor-structure work.
-- careless-response research comparing instructed-response items with consistency, long-string, and response-time indicators.
+The v3.2 architecture continues the v3.1 SSOGI and questionnaire-design review and additionally draws on published work showing that gender expression can be measured separately from identity and that sexual desire is multidimensional rather than interchangeable with attraction. Published sexual-desire instruments are used only as construct-level references; their item text is not copied.
