@@ -84,6 +84,8 @@ The response-quality indicator remains a caution flag, not a psychological valid
 
 The expanded item set contributes additional semantic-pair information while retaining the same multi-signal architecture. `response_quality_detail` stores attention, pair, pattern, speed, milliseconds per item, longest run, and maximum option share.
 
+Beginning with v3.2.1, the identical-response-run thresholds scale with the number of substantive items instead of reusing the absolute 9/12/16-item thresholds from the shorter v3.1 questionnaire. The proportions are kept equivalent to the old design (about 28%, 38%, and 50% of substantive responses), and the resolved thresholds are stored in `response_quality_detail.run_thresholds`. This is an operational quality-scoring revision; questionnaire items and psychological subscale scoring are unchanged from v3.2.0.
+
 ## Raw location/IP observability
 
 Raw browser geolocation and the `CF-Connecting-IP` value seen by the Worker remain stored for regional statistics and later human review of suspicious or duplicate-looking records.
@@ -94,13 +96,16 @@ The application deliberately does **not** automatically reject, merge, deduplica
 
 D1 remains the primary archive. A successful v3.2 submission performs one D1 insert and no routine KV mirror write. KV is used only as a failure fallback. The admin endpoint remains D1-only by default; legacy/fallback KV scanning is opt-in with `include_kv=1` or used when D1 is unavailable.
 
+Beginning with v3.2.1, the save endpoint also gates the stored version by the client-declared questionnaire version and score schema. A 3.2.1 submission must contain the v3.2 expanded schema, all 16 subscale scores, all 58 raw item answers, and response-quality metadata. A still-open older page may finish after a deployment; if it declares an older supported version, it is archived under that actual questionnaire version instead of being relabeled as the newest server version.
+
 ## Versioning and historical data
 
-The `records` table is not rewritten. Historical rows keep their original `version`, `tag`, `scores`, IP, location, and self-report values.
+The `records` table is not rewritten. Historical rows keep their original `tag`, `scores`, IP, location, and self-report values; version corrections are limited to records that can be unambiguously identified as deployment-race mislabels from their stored schema.
 
 - v3.1.0: initial multidimensional 34-item release
 - v3.1.1: raw IP/GPS restoration and D1-primary/KV-fallback storage policy
 - v3.2.0: 58-item expanded profile with gender expression, nonbinary-target attraction, libido, romantic desire, relationship openness, expanded baseline self-report, and self-test comparison metadata
+- v3.2.1: same 58-item/scoring model as v3.2.0, with schema-gated version archiving and questionnaire-length-scaled long-string quality thresholds
 
 v3.2 rows use `_schema = 'assigned-sex-v3.2-expanded-profile'`. Raw answers remain in `_answers`; comparable baseline variables are also copied to `_self_report` for analysis convenience.
 
