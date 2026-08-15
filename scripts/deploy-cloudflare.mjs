@@ -2,8 +2,9 @@ import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const { outputPath } = await import('./provision-cloudflare.mjs');
+const { outputPath, mf01smOutputPath } = await import('./provision-cloudflare.mjs');
 const webDirectory = path.dirname(outputPath);
+const mf01smConfigPath = path.relative(webDirectory, mf01smOutputPath).replaceAll('\\', '/');
 
 function run(arguments_) {
   return new Promise((resolve, reject) => {
@@ -92,6 +93,15 @@ async function reconcileMirrorDomains(config) {
 await run(['d1', 'migrations', 'apply', process.env.CF_ONE_D1_NAME?.trim() || 'cf-one', '--remote', '--config', 'wrangler.generated.jsonc']);
 const generatedConfig = JSON.parse(await readFile(outputPath, 'utf8'));
 await reconcileMirrorDomains(generatedConfig);
+
+// mf01sm now lives in this repository but deliberately keeps its historical
+// D1/KV bindings. Upload a code version first; only route traffic after the
+// Worker bundle has compiled successfully. keep_vars preserves the existing
+// ADMIN runtime variable without checking it into git.
+const mf01smVersionTag = `mf01sm-v3-${Date.now().toString(36)}`;
+await run(['versions', 'upload', '--config', mf01smConfigPath, '--tag', mf01smVersionTag, '--message', 'mf01sm v3 automated build']);
+await run(['versions', 'deploy', '--config', mf01smConfigPath, '--version-tag', mf01smVersionTag, '--yes', '--message', 'mf01sm v3 automated build']);
+console.log(`mf01sm version ${mf01smVersionTag} deployed from cf-one repository; historical D1/KV bindings were retained.`);
 
 // Code/config versions and traffic deployments are deliberately separated from
 // Worker triggers. `wrangler deploy` synchronizes configured routes/custom
