@@ -89,6 +89,8 @@ try {
 
   const bundlePath = await findJavaScript(outDirectory);
   const source = await readFile(bundlePath, 'utf8');
+  // Only use semantic/literal markers that survive esbuild. Source identifier names are not stable
+  // after bundling and must never be used as deployment gates.
   const requiredMarkers = [
     '3.8.0',
     'assigned-sex-v3.7-balanced-sm-fantasy',
@@ -108,10 +110,13 @@ try {
     'run_thresholds',
     'response_quality_detail',
     'CF-Connecting-IP',
-    'MAX_BODY_CHARS'
+    'payload too large',
+    'scores too large',
+    'KV Legacy/Fallback'
   ];
-  if (!requiredMarkers.every(marker => source.includes(marker))) {
-    throw new Error('mf01sm runtime bundle is missing v3.8.0 flat-runtime integrity markers; refusing to deploy.');
+  const missingMarkers = requiredMarkers.filter(marker => !source.includes(marker));
+  if (missingMarkers.length) {
+    throw new Error(`mf01sm runtime bundle is missing stable v3.8.0 integrity markers: ${missingMarkers.join(', ')}; refusing to deploy.`);
   }
   if (source.includes('mf01sm-v37-age-gate') || /n\s*<\s*16|age\s*<\s*16|n\s*>\s*90|age\s*>\s*90/.test(source)) {
     throw new Error('mf01sm v3.8 bundle still contains an active legacy 16/90 age gate; refusing to deploy.');
