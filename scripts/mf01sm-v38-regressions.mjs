@@ -23,11 +23,37 @@ assert.ok(html.includes('S-like 假想') && html.includes('M-like 假想'), 'S/M
 assert.ok(html.includes('男子气 ↔ 女子气'), 'MMPI-Mf-inspired nonsexual result must remain present');
 assert.ok(html.includes('返回 Test 首页 · 更多测试'), 'Test-directory return action must remain present');
 assert.ok(html.includes('mf01sm-v382-v1-roast-tags'), 'v3.8.2 must contain the v1-style entertainment-tag generator');
-assert.ok(html.includes('里百合风味 / 裙摆叛逃者'), 'v3.8.2 must retain the v1-style cross-assigned AMAB entertainment family');
-assert.ok(html.includes('第四性 / 电子盆栽'), 'v3.8.2 must include nonbinary/agender-style entertainment vocabulary');
-assert.ok(html.includes('爹系暴君 / 控场狂魔'), 'v3.8.2 must include the high-initiative/high-control roast family');
-assert.ok(html.includes('绝赞绒布球 / 白给小动物'), 'v3.8.2 must include the low-initiative/low-control roast family');
-assert.ok(html.includes('端水大师 / 薛定谔的XP'), 'v3.8.2 must include the balanced/mixed roast family');
+
+const lockedVocabulary = [
+  '里百合 / 药娘预备役 / 软糯伪娘',
+  '软糯小蓝梁 / 蓝梁诱捕器',
+  '√-16先锋 / 腐改跨',
+  '铁T / 姬圈老保',
+  '第四性 / 电子盆栽',
+  '杂食恶犬 / 荤素不忌',
+  '纯爱战神 / 戒断圣体',
+  '击剑爱好者 / 哇是成都人',
+  '柑橘味香女 / 兰州特产',
+  '平平无奇顺直男',
+  '普通顺直女',
+  '爹系狂攻 / 强制爱暴君 / 掌控狂',
+  '绝赞绒布球 / 惹人怜爱的M圣体 / 专属抱枕',
+  '提款机忠犬 / 奉献型败犬 / 苦主圣体',
+  '钓系绿茶 / 腹黑榨汁机 / 女王受',
+  '纸老虎 / 窝里横',
+  '又菜又爱玩 / 嘴强王者',
+  '无情推土机 / 钝角',
+  '躺平咸鱼 / 纯粹承伤体',
+  '端水大师 / 薛定谔的XP',
+  '究极缝合怪'
+];
+for (const tag of lockedVocabulary) assert.ok(html.includes(tag), `locked entertainment tag must survive unchanged: ${tag}`);
+assert.ok(html.includes('结果页“打脸”解析'), 'result page must include conditional roast-analysis block');
+assert.ok(html.includes('填表的时候装模作样选个认同生理性别，一做题底裤都掉光了。'), 'self/test mismatch roast copy must remain unchanged');
+assert.ok(html.includes('电子阳痿晚期。对世俗的摩擦毫不感冒'), 'Ace roast copy must remain unchanged');
+assert.ok(html.includes('const smEligible=age>=16;'), 'S/M-like roast families must be gated to age 16+');
+assert.ok(!html.includes('里百合风味 / 裙摆叛逃者'), 'assistant-authored replacement vocabulary must stay removed');
+assert.ok(!html.includes('爹系暴君 / 控场狂魔'), 'assistant-authored replacement suffix must stay removed');
 assert.ok(!html.includes('绝对支配 / 人形项目经理'), 'v3.8.1 project-manager roast must be removed');
 assert.ok(!html.includes('性别风格双核CPU'), 'v3.8.1 CPU-style tag vocabulary must be removed');
 
@@ -105,4 +131,4 @@ const oversizedResponse = await current.fetch(new Request('https://mf01sm.intern
 }), env);
 assert.equal(oversizedResponse.status, 413, 'server must retain payload-size protection against storage abuse');
 
-console.log(`mf01sm v3.8.2 regressions passed: flat static pages, ${currentQuestions.length} unchanged responses, v1-style entertainment tags, complete lazy admin records + opt-in KV history, client age 13–99, one D1 write / zero routine KV writes.`);
+console.log(`mf01sm v3.8.2 regressions passed: flat static pages, ${currentQuestions.length} unchanged responses, locked user-supplied v1 roast tags + conditional roast analysis, complete lazy admin records + opt-in KV history, client age 13–99, one D1 write / zero routine KV writes.`);
