@@ -48,10 +48,23 @@ const lockedVocabulary = [
   '究极缝合怪'
 ];
 for (const tag of lockedVocabulary) assert.ok(html.includes(tag), `locked entertainment tag must survive unchanged: ${tag}`);
-assert.ok(html.includes('结果页“打脸”解析'), 'result page must include conditional roast-analysis block');
-assert.ok(html.includes('填表的时候装模作样选个认同生理性别，一做题底裤都掉光了。'), 'self/test mismatch roast copy must remain unchanged');
-assert.ok(html.includes('电子阳痿晚期。对世俗的摩擦毫不感冒'), 'Ace roast copy must remain unchanged');
+assert.ok(html.includes('结果页“打脸”解析'), 'result page must include roast-analysis block');
+assert.ok(html.includes('【表里不一鉴定】') && html.includes('【XP底色解剖】'), 'roast analysis must expose both sections');
+assert.ok(html.includes('嘴确实比分数硬'), 'cross/self mismatch roast must be present');
+assert.ok(html.includes('拿鞋盒装液体猫'), 'agender/nonbinary mismatch roast must be present');
+assert.ok(html.includes('菜单看得比嘴上承认的宽'), 'pan/bi mismatch roast must be present');
+assert.ok(html.includes('红尘在门口狂按铃'), 'low-attraction mismatch roast must be present');
+assert.ok(html.includes('别继续占用本测试的瓜田带宽'), 'self/test agreement roast must be present');
+assert.ok(html.includes('接管导演席'), 'high-initiative/high-control roast must be present');
+assert.ok(html.includes('自带“请安排我”按钮的绒布球'), 'low-initiative/high-follow roast must be present');
+assert.ok(html.includes('手柄不拿，嘴里已经完成三周目攻略'), 'low-initiative/high-control contrast roast must be present');
+assert.ok(html.includes('冲锋号自己吹、任务自己扛'), 'high-initiative/high-follow contrast roast must be present');
+assert.ok(html.includes('主见经常在关键时刻突然请年假'), 'moderate contrast roast must be present');
+assert.ok(html.includes('在开场动画里坐到片尾曲'), 'passive fallback roast must be present');
+assert.ok(html.includes('系统已经懒得继续给你找单一物种名了'), 'chaotic roast must be present');
 assert.ok(html.includes('const smEligible=age>=16;'), 'S/M-like roast families must be gated to age 16+');
+assert.ok(!html.includes('填表的时候装模作样选个认同生理性别，一做题底裤都掉光了。'), 'superseded explicit mismatch copy must be removed');
+assert.ok(!html.includes('电子阳痿晚期。对世俗的摩擦毫不感冒'), 'superseded explicit Ace copy must be removed');
 assert.ok(!html.includes('里百合风味 / 裙摆叛逃者'), 'assistant-authored replacement vocabulary must stay removed');
 assert.ok(!html.includes('爹系暴君 / 控场狂魔'), 'assistant-authored replacement suffix must stay removed');
 assert.ok(!html.includes('绝对支配 / 人形项目经理'), 'v3.8.1 project-manager roast must be removed');
@@ -131,4 +144,4 @@ const oversizedResponse = await current.fetch(new Request('https://mf01sm.intern
 }), env);
 assert.equal(oversizedResponse.status, 413, 'server must retain payload-size protection against storage abuse');
 
-console.log(`mf01sm v3.8.2 regressions passed: flat static pages, ${currentQuestions.length} unchanged responses, locked user-supplied v1 roast tags + conditional roast analysis, complete lazy admin records + opt-in KV history, client age 13–99, one D1 write / zero routine KV writes.`);
+console.log(`mf01sm v3.8.2 regressions passed: flat static pages, ${currentQuestions.length} unchanged responses, locked user-supplied v1 roast tags + polished two-part roast analysis, complete lazy admin records + opt-in KV history, client age 13–99, one D1 write / zero routine KV writes.`);
