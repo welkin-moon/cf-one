@@ -9,9 +9,9 @@ const current = (await import(currentUrl)).default;
 const legacy = (await import(legacyUrl)).default;
 
 const currentResponse = await current.fetch(new Request('https://mf01sm.internal/'), {});
-assert.equal(currentResponse.status, 200, 'v3.8.1 root must render');
+assert.equal(currentResponse.status, 200, 'v3.8.2 root must render');
 const html = await currentResponse.text();
-assert.match(html, /v3\.8\.1/, 'current page must advertise v3.8.1');
+assert.match(html, /v3\.8\.2/, 'current page must advertise v3.8.2');
 assert.ok(html.includes('mf01sm-v38-age-gate'), 'current page must use the v3.8 client age gate');
 assert.ok(!html.includes('mf01sm-v37-age-gate'), 'legacy v3.7 age-gate marker must not survive the snapshot');
 assert.ok(html.includes('年龄范围：13–99') || html.includes('13–99'), 'current page must describe the 13–99 range');
@@ -22,10 +22,53 @@ assert.ok(html.includes('mixed-v37-sm-fantasy'), 'question format id must stay v
 assert.ok(html.includes('S-like 假想') && html.includes('M-like 假想'), 'S/M-like content must remain present');
 assert.ok(html.includes('男子气 ↔ 女子气'), 'MMPI-Mf-inspired nonsexual result must remain present');
 assert.ok(html.includes('返回 Test 首页 · 更多测试'), 'Test-directory return action must remain present');
-assert.ok(html.includes('mf01sm-v381-roast-tags'), 'v3.8.1 must contain the new roast-tag generator');
-assert.ok(html.includes('绝对支配 / 强势主导'), 'v3.8.1 tag vocabulary must reference the historical v1/v2 strong-lead style');
-assert.ok(html.includes('诱导掌控 / 傲娇反差'), 'v3.8.1 tag vocabulary must reference the historical v1.1.5 teasing style');
-assert.ok(html.includes('M倾向 / 遥控器借你但产权归我'), 'M-like roast must remain independent from real-life autonomy');
+assert.ok(html.includes('mf01sm-v382-v1-roast-tags'), 'v3.8.2 must contain the v1-style entertainment-tag generator');
+
+const lockedVocabulary = [
+  '里百合 / 药娘预备役 / 软糯伪娘',
+  '软糯小蓝梁 / 蓝梁诱捕器',
+  '√-16先锋 / 腐改跨',
+  '铁T / 姬圈老保',
+  '第四性 / 电子盆栽',
+  '杂食恶犬 / 荤素不忌',
+  '纯爱战神 / 戒断圣体',
+  '击剑爱好者 / 哇是成都人',
+  '柑橘味香女 / 兰州特产',
+  '平平无奇顺直男',
+  '普通顺直女',
+  '爹系狂攻 / 强制爱暴君 / 掌控狂',
+  '绝赞绒布球 / 惹人怜爱的M圣体 / 专属抱枕',
+  '提款机忠犬 / 奉献型败犬 / 苦主圣体',
+  '钓系绿茶 / 腹黑榨汁机 / 女王受',
+  '纸老虎 / 窝里横',
+  '又菜又爱玩 / 嘴强王者',
+  '无情推土机 / 钝角',
+  '躺平咸鱼 / 纯粹承伤体',
+  '端水大师 / 薛定谔的XP',
+  '究极缝合怪'
+];
+for (const tag of lockedVocabulary) assert.ok(html.includes(tag), `locked entertainment tag must survive unchanged: ${tag}`);
+assert.ok(html.includes('结果页“打脸”解析'), 'result page must include roast-analysis block');
+assert.ok(html.includes('【表里不一鉴定】') && html.includes('【XP底色解剖】'), 'roast analysis must expose both sections');
+assert.ok(html.includes('嘴确实比分数硬'), 'cross/self mismatch roast must be present');
+assert.ok(html.includes('拿鞋盒装液体猫'), 'agender/nonbinary mismatch roast must be present');
+assert.ok(html.includes('菜单看得比嘴上承认的宽'), 'pan/bi mismatch roast must be present');
+assert.ok(html.includes('红尘在门口狂按铃'), 'low-attraction mismatch roast must be present');
+assert.ok(html.includes('别继续占用本测试的瓜田带宽'), 'self/test agreement roast must be present');
+assert.ok(html.includes('接管导演席'), 'high-initiative/high-control roast must be present');
+assert.ok(html.includes('自带“请安排我”按钮的绒布球'), 'low-initiative/high-follow roast must be present');
+assert.ok(html.includes('手柄不拿，嘴里已经完成三周目攻略'), 'low-initiative/high-control contrast roast must be present');
+assert.ok(html.includes('冲锋号自己吹、任务自己扛'), 'high-initiative/high-follow contrast roast must be present');
+assert.ok(html.includes('主见经常在关键时刻突然请年假'), 'moderate contrast roast must be present');
+assert.ok(html.includes('在开场动画里坐到片尾曲'), 'passive fallback roast must be present');
+assert.ok(html.includes('系统已经懒得继续给你找单一物种名了'), 'chaotic roast must be present');
+assert.ok(html.includes('const smEligible=age>=16;'), 'S/M-like roast families must be gated to age 16+');
+assert.ok(!html.includes('填表的时候装模作样选个认同生理性别，一做题底裤都掉光了。'), 'superseded explicit mismatch copy must be removed');
+assert.ok(!html.includes('电子阳痿晚期。对世俗的摩擦毫不感冒'), 'superseded explicit Ace copy must be removed');
+assert.ok(!html.includes('里百合风味 / 裙摆叛逃者'), 'assistant-authored replacement vocabulary must stay removed');
+assert.ok(!html.includes('爹系暴君 / 控场狂魔'), 'assistant-authored replacement suffix must stay removed');
+assert.ok(!html.includes('绝对支配 / 人形项目经理'), 'v3.8.1 project-manager roast must be removed');
+assert.ok(!html.includes('性别风格双核CPU'), 'v3.8.1 CPU-style tag vocabulary must be removed');
 
 function parseQuestions(source) {
   const match = source.match(/const QUESTIONS=([\s\S]*?);const LABELS=/);
@@ -37,11 +80,11 @@ const legacyResponse = await legacy.fetch(new Request('https://mf01sm.legacy/'),
 const legacyHtml = await legacyResponse.text();
 const legacyQuestions = parseQuestions(legacyHtml);
 const currentQuestions = parseQuestions(html);
-assert.equal(currentQuestions.length, 58, 'v3.8.1 must retain all 58 v3.7 responses');
-assert.deepEqual(currentQuestions, legacyQuestions, 'v3.8.1 must not change questionnaire content or response formats');
+assert.equal(currentQuestions.length, 58, 'v3.8.2 must retain all 58 v3.7 responses');
+assert.deepEqual(currentQuestions, legacyQuestions, 'v3.8.2 must not change questionnaire content or response formats');
 
 const adminResponse = await current.fetch(new Request('https://mf01sm.internal/admin'), {});
-assert.equal(adminResponse.status, 200, 'v3.8.1 admin page must render without legacy runtime delegation');
+assert.equal(adminResponse.status, 200, 'v3.8.2 admin page must render without legacy runtime delegation');
 const adminHtml = await adminResponse.text();
 assert.ok(adminHtml.includes("startsWith('3.8')") && adminHtml.includes("startsWith('3.7')"), 'admin renderer must understand both v3.8 and v3.7 score shapes');
 assert.ok(adminHtml.includes('完整记录 / Raw'), 'admin rows must expose a lazy full-record details control');
@@ -67,10 +110,8 @@ const env = {
   }
 };
 
-// Deliberately use an age outside the UI range: the server should archive it rather than spend
-// current-path CPU on business/profile validation. The 13–99 restriction belongs to the client.
 const saveBody = {
-  version: '3.8.1',
+  version: '3.8.2',
   nickname: 'regression',
   age: 7,
   gender: 'AMAB',
@@ -91,7 +132,7 @@ assert.equal(saveResponse.status, 200, 'server must not reject a response solely
 const saveJson = await saveResponse.json();
 assert.equal(saveJson.d1, true, 'normal archive path must use D1');
 assert.equal(saveJson.kv, false, 'normal archive path must not mirror to KV');
-assert.equal(saveJson.version, '3.8.1');
+assert.equal(saveJson.version, '3.8.2');
 assert.ok(inserted, 'D1 insert parameters must be captured');
 assert.equal(inserted[3], 7, 'server must preserve normalized age without enforcing a range');
 assert.equal(kvWrites, 0, 'successful D1 save must consume no KV write');
@@ -103,4 +144,4 @@ const oversizedResponse = await current.fetch(new Request('https://mf01sm.intern
 }), env);
 assert.equal(oversizedResponse.status, 413, 'server must retain payload-size protection against storage abuse');
 
-console.log(`mf01sm v3.8.1 regressions passed: flat static pages, ${currentQuestions.length} unchanged responses, historical-style roast tags, complete lazy admin records + opt-in KV history, client age 13–99, one D1 write / zero routine KV writes.`);
+console.log(`mf01sm v3.8.2 regressions passed: flat static pages, ${currentQuestions.length} unchanged responses, locked user-supplied v1 roast tags + polished two-part roast analysis, complete lazy admin records + opt-in KV history, client age 13–99, one D1 write / zero routine KV writes.`);
