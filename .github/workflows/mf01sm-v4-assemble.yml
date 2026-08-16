@@ -21,12 +21,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p apps/mf01sm/src scripts
-          cat .v4parts/model.* | base64 -d > apps/mf01sm/src/v4-model.js
-          cat .v4parts/gen.* | base64 -d > scripts/generate-mf01sm-current.mjs
-          cat .v4parts/runtime.* | base64 -d > apps/mf01sm/src/current-runtime.js
-          cat .v4parts/regress.* | base64 -d > scripts/mf01sm-v4-regressions.mjs
-          cat .v4parts/deploy.* | base64 -d > scripts/deploy-mf01sm-runtime.mjs
-          cat .v4parts/package.* | base64 -d > package.json
+          cat .v4parts/m.* | base64 -d > apps/mf01sm/src/v4-model.js
+          cat .v4parts/g.* | base64 -d > scripts/generate-mf01sm-current.mjs
+          cat .v4parts/rt.* | base64 -d > apps/mf01sm/src/current-runtime.js
+          cat .v4parts/t.* | base64 -d > scripts/mf01sm-v4-regressions.mjs
+          cat .v4parts/d.* | base64 -d > scripts/deploy-mf01sm-runtime.mjs
+          cat .v4parts/p.* | base64 -d > package.json
           node --check apps/mf01sm/src/v4-model.js
           node --check apps/mf01sm/src/current-runtime.js
           node --check scripts/generate-mf01sm-current.mjs
