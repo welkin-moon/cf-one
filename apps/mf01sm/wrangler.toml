@@ -1,5 +1,5 @@
 name = "mf01sm"
-main = "src/v33-runtime.js"
+main = "src/v34-runtime.js"
 compatibility_date = "2026-05-07"
 workers_dev = false
 keep_vars = true

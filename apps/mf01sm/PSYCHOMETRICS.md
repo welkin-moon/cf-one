@@ -1,10 +1,10 @@
-# mf01sm v3.3 measurement notes
+# mf01sm v3.4 measurement notes
 
-mf01sm is an exploratory self-report questionnaire, not a clinical diagnostic instrument. Version 3.3 keeps continuous scores primary and expands both the self-identification layer and the questionnaire so later analysis can study how self-description relates to item-response profiles without treating disagreement as error.
+mf01sm is an exploratory self-report questionnaire, not a clinical diagnostic instrument. Version 3.4 keeps the 62-item / 17-subscale questionnaire introduced in v3.3, but replaces the baseline self-identification controls and the primary result presentation with continuous 0–1 spectra modeled after the spectrum view used in the project UI.
 
-## Constructs
+## Questionnaire constructs
 
-v3.3 contains 62 questionnaire items: 60 scored items and two instructed-response quality checks. Scored items are distributed across 17 subscales:
+v3.4 contains the same 62 questionnaire items as v3.3: 60 scored items and two instructed-response quality checks. The 17 raw subscales remain:
 
 - assigned-sex-aligned gender direction
 - cross-assigned gender direction
@@ -24,123 +24,98 @@ v3.3 contains 62 questionnaire items: 60 scored items and two instructed-respons
 - interpersonal initiative
 - decision autonomy
 
-Sex assigned at birth remains separate from current gender identity. Gender identity is collected as a spectrum position plus optional identity labels such as trans, nonbinary, genderqueer, genderfluid, agender, questioning and free text. These labels are self-description variables, not scored questionnaire answers.
+The raw questionnaire subscales still use unweighted 1–5 item means mapped to 0–100. They are retained for psychometric analysis and historical continuity. The public v3.4 result view does not present them as the primary output; it presents derived 0–1 spectra instead.
 
-Gender expression remains separate from identity. Masculine and feminine expression are retained as two raw subscales rather than forcing every respondent onto one bipolar score. `expression_position = 50 + (expression_fem - expression_masc) / 2` is stored only as a convenience for comparison with the baseline expression self-rating.
+## Baseline continuous spectra
 
-Romantic attraction and physical/sexual attraction remain separate and each retains male, female and nonbinary/gender-diverse target directions. Libido remains separate from target-specific physical/sexual attraction, and desire for a romantic relationship remains separate from attraction to particular genders.
+The v3.4 baseline removes the previous multi-select identity tags, preset Likert points and free-text identity fields. Except for assigned sex at birth, baseline self-report is expressed through continuous HTML range inputs with `min=0`, `max=1` and `step=0.001`. There are no preset categorical tick points.
 
-v3.3 splits relationship structure into two dimensions. `relationship_openness` measures comfort/preference for consensually negotiated non-exclusivity. `multi_partner` measures comfort/interest in simultaneously maintaining multiple consensual romantic relationships. This separation is intentional: an open dyadic relationship and polyamorous/multi-partner relationship structure are not the same construct.
+The baseline spectra are:
 
-## Baseline self-report and identity layer
+1. gender identity: `0 = male`, `0.5 = nonbinary`, `1 = female`
+2. gender expression: `0 = highly masculine`, `0.5 = androgynous`, `1 = highly feminine`
+3. sexual orientation: `0 = straight`, `0.5 = bi/pan`, `1 = gay/lesbian`
+4. sexual-attraction intensity: `0 = asexual`, `0.5 = grey-asexual`, `1 = clearly allosexual / strong sexual-attraction capacity`
+5. libido / sexual-drive intensity: `0 = low`, `0.5 = ordinary`, `1 = high`
+6. romantic tendency: `0 = aromantic`, `0.5 = interested`, `1 = strongly romantic`
+7. relationship structure: `0 = monogamous`, `0.5 = open/non-exclusive`, `1 = poly/multiple romantic partners`
 
-The baseline records:
+Gender identity has one exception to the numeric axis. The respondent chooses either any numeric position on the male–nonbinary–female continuum **or exactly one** of three axis-outside states:
 
-- assigned sex at birth
-- current gender position and optional gender identity labels/free text
-- multi-select sexual/physical-attraction orientation labels plus optional free text
-- multi-select romantic-orientation labels plus optional free text
-- gender-identity stability
-- confidence in orientation identity
-- stability of attraction direction
-- self-rated romantic attraction strength toward men, women and nonbinary/gender-diverse people
-- self-rated physical/sexual attraction strength toward men, women and nonbinary/gender-diverse people
-- self-rated gender-expression position
-- self-rated overall physical/sexual-attraction intensity
-- self-rated libido
-- self-rated desire for a romantic relationship
-- self-rated consensual relationship openness
-- self-rated comfort/interest in multiple simultaneous romantic relationships
+- `agender` / 无性
+- `bigender` / 双性
+- `genderfluid` / 流动
 
-Structured identity metadata is copied into `scores._self_report` where available. The compact `self_gender` and `self_orientation` database columns remain for compatibility and human-readable admin views; no database schema migration is required.
+These three states are mutually exclusive with the continuous gender slider. The previous Trans, Non-binary, Genderqueer, Questioning and other-tag controls are removed from the baseline UI, as is the previous free-text identity field.
 
-## Self-ID / self-rating versus questionnaire profile
+The compact `self_gender` and `self_orientation` database columns remain for compatibility and admin readability. Structured numeric baseline data are stored in `scores._self_report.axes` and in the existing `self_likert` JSON column. No D1 schema migration is required.
 
-v3.3 stores two kinds of comparison data.
+## Primary 0–1 questionnaire spectra
 
-`self_identity_comparison` keeps categorical self-description beside questionnaire profiles for gender, physical/sexual orientation and romantic orientation. It does **not** convert labels into expected scores and does not output a categorical “match” judgment.
+v3.4 stores `scores.axes01`, which maps the questionnaire profile onto the same seven public spectra.
 
-`self_test_comparison` compares only variables that can reasonably share the same 0–100 axis. v3.3 includes:
+- `gender_identity`: a barycentric position from questionnaire male-direction, female-direction and nonbinary-fit evidence; 0 is male and 1 is female, with nonbinary evidence centered at 0.5.
+- `gender_expression`: `expression_position / 100`.
+- `sexual_orientation`: a convenience straight↔bi/pan↔gay index derived from target-specific physical/sexual-attraction scores relative to the respondent's numeric gender position. Same-gender attraction contributes toward 1, other-gender attraction toward 0 and nonbinary-target attraction toward the midpoint. For an axis-outside gender self-report, the questionnaire-derived gender position is used only for this convenience transformation.
+- `sexual_attraction_intensity`: `phys_overall / 100`, where `phys_overall = max(phys_m, phys_f, phys_nb)`.
+- `libido`: `libido / 100`.
+- `romantic_tendency`: `romantic_desire / 100`.
+- `relationship_structure`: `(relationship_openness + multi_partner) / 200`. This makes a profile with high openness but low multi-partner interest naturally sit near the open midpoint while high values on both dimensions move toward the poly end.
 
-- gender-expression position
-- overall physical/sexual-attraction intensity
-- libido
-- romantic-relationship desire
-- relationship openness
-- multi-partner relationship comfort/interest
-- self-rated versus questionnaire romantic attraction to men, women and nonbinary/gender-diverse people
-- self-rated versus questionnaire physical/sexual attraction to men, women and nonbinary/gender-diverse people
+These are convenience presentation axes, not validated identity classifiers. The underlying raw subscales remain available and should be preferred for psychometric modeling.
 
-For each comparable variable the stored object contains the self-rating, questionnaire score, absolute gap and signed gap. `mean_absolute_gap` is descriptive convergence metadata only. It must not be interpreted as honesty, validity, diagnostic agreement or an exclusion rule.
+## Self-report versus questionnaire comparison
 
-## Item construction
+`scores.self_test_comparison` compares baseline 0–1 positions with the questionnaire-derived `axes01` positions. For numeric axes it stores:
 
-Items are short, single-idea statements on a five-point agreement scale. Items from different subscales are interleaved. Broad mechanical reverse-wording remains avoided because wording reversal can add method variance and confusion. Selected semantically parallel item pairs are used only as one component of the response-quality indicator.
+- `self`
+- `test`
+- `gap = abs(test - self)`
+- `signed_gap = test - self`
 
-No MMPI, Transgender Congruence Scale, Kinsey, Klein, Sexual Desire Inventory or other proprietary/validated instrument items are copied. Published measurement research is used to define construct boundaries and validation strategy; mf01sm uses its own wording and remains an unvalidated exploratory instrument until local validation is completed.
+The gender-identity gap is left null when the baseline selection is agender, bigender or genderfluid because those states are not represented as single points on the male–nonbinary–female line.
 
-## Scoring
-
-Each subscale is an unweighted mean of its 1–5 item responses mapped linearly to 0–100. Equal item weights remain intentional until enough local data exist to justify another model empirically.
-
-Convenience composites include:
-
-- `expression_position = 50 + (expression_fem - expression_masc) / 2`, clamped to 0–100
-- `expression_balance = 100 - abs(expression_fem - expression_masc)`
-- `phys_overall = max(phys_m, phys_f, phys_nb)`
-- `rom_overall = max(rom_m, rom_f, rom_nb)`
-
-A textual `relationship_profile` is generated from `relationship_openness` and `multi_partner` for UI explanation. It is not a validated categorical diagnosis and the two raw continuous scores remain primary.
-
-Legacy compatibility fields (`m`, `f`, `attr_m`, `attr_f`, `agender`, `ace`, `top`, `bot`, `d`, `s`, `trans`, `pan`, `validity`) remain for old tooling. New analysis should use the current subscales. The legacy `ace` field remains a convenience proxy derived from physical-attraction intensity and must not be treated as an asexual identity classifier.
+The mean absolute gap is descriptive convergence metadata only. A gap is not an honesty score, validity score, diagnosis or automatic reason to exclude a response.
 
 ## Response quality
 
-The response-quality indicator remains a caution flag, not a psychological validity scale. It combines:
+The response-quality indicator remains a caution flag, not a psychological validity scale. It combines two instructed-response checks, selected semantic-pair consistency, identical-response runs / response concentration and average response speed.
 
-- two instructed-response checks
-- consistency of selected semantically parallel item pairs
-- unusually long identical-response runs / extreme response concentration
-- unusually short average response time
+The questionnaire still has 60 substantive responses, so the proportional long-string thresholds remain 17 / 23 / 30 for mild / mid / severe flags. The resolved thresholds remain stored in `response_quality_detail.run_thresholds` and are required by the v3.4 save gate.
 
-Run thresholds scale with the number of substantive items. v3.3 has 60 substantive responses, resolving the proportional thresholds to 17, 23 and 30 identical responses for mild/mid/severe long-string flags. The resolved values are stored in `response_quality_detail.run_thresholds` and are required by the v3.3 schema gate.
+## Raw location/IP and duplicate review
 
-## Raw location/IP observability
+Raw browser geolocation and the `CF-Connecting-IP` value seen by the Worker remain stored for regional analysis and later human review of suspicious or duplicate-looking records.
 
-Raw browser geolocation and the `CF-Connecting-IP` value seen by the Worker remain stored for regional statistics and later human review of suspicious or duplicate-looking records.
+The application does **not** automatically reject, merge, deduplicate or exclude samples from IP/GPS similarity. Carrier networks, campus networks, household NAT/CGNAT, VPN/proxy chains and mobile IP reassignment make automatic identity inference too error-prone.
 
-The application deliberately does **not** automatically reject, merge, deduplicate or exclude responses from IP/GPS similarity. Carrier networks, campus networks, household NAT/CGNAT, VPN/proxy chains and mobile IP reassignment make automatic identity inference too error-prone. IP, GPS, timestamps, response quality, self-report variables and item responses are evidence for later human analysis, not automatic exclusion rules.
+## Storage, schema gate and historical versions
 
-## Storage/quota and schema/version policy
+D1 remains the primary archive. A successful v3.4 submission performs one D1 insert and no routine KV mirror write. KV remains failure fallback only. The admin endpoint remains D1-first.
 
-D1 remains the primary archive. A successful submission performs one D1 insert and no routine KV mirror write. KV is used only as a failure fallback. The admin endpoint remains D1-only by default; legacy/fallback KV scanning is opt-in with `include_kv=1` or used when D1 is unavailable.
+v3.4 uses `_schema = 'assigned-sex-v3.4-continuous-spectrum'`. A v3.4 record must contain all 17 raw questionnaire subscale scores, all 62 raw item answers, response-quality metadata with 17/23/30 run thresholds, all seven questionnaire `axes01` values and a complete v3.4 baseline spectrum object.
 
-The save endpoint gates the stored version by the client-declared questionnaire version and score schema. This protects data when a respondent finishes an older page after a new deployment. Older supported pages are archived under their actual questionnaire version instead of being silently relabeled.
+The v3.4 runtime delegates older declared versions to the existing v3.3/v3.2/v3.1 schema gates, so an older page left open across deployment is archived under its actual questionnaire version instead of being relabeled.
 
-v3.3 submissions must contain the v3.3 schema, all 17 subscale scores, all 62 raw item answers, response-quality metadata with v3.3 run thresholds and the expanded baseline self-report fields.
-
-## Versioning and historical data
-
-The `records` table is not rewritten. Historical rows keep their original version, tag, scores, IP, location and self-report values.
+Historical records are never rewritten merely because a new version is deployed.
 
 - v3.1.0: initial multidimensional 34-item release
-- v3.1.1: raw IP/GPS restoration and D1-primary/KV-fallback storage policy
-- v3.2.0: 58-item expanded profile with gender expression, nonbinary-target attraction, libido, romantic desire, relationship openness and numeric self-test comparison
-- v3.2.1: same 58-item psychological model as v3.2.0, with schema-gated version archiving and questionnaire-length-scaled long-string quality thresholds
-- v3.3.0: 62-item model; richer multi-label sexual/romantic self-ID, six target-specific attraction self-ratings, direct categorical self-ID versus questionnaire display, and separation of relationship openness from multi-partner relationship comfort/interest
-
-v3.3 rows use `_schema = 'assigned-sex-v3.3-expanded-profile'`. Raw answers remain in `_answers`; baseline variables remain in `_self_report`.
+- v3.1.1: raw IP/GPS restoration and D1-primary/KV-fallback storage
+- v3.2.0: 58-item expanded profile
+- v3.2.1: schema-gated version archiving and length-scaled long-string thresholds
+- v3.3.0: 62-item / 17-subscale profile, richer target-specific self-ratings and split relationship openness vs multi-partner construct
+- v3.4.0: same 62 questionnaire items as v3.3, but baseline and primary results redesigned as free continuous 0–1 spectra; identity tags/free text removed; gender adds mutually exclusive agender/bigender/genderfluid axis-outside states
 
 ## Validation plan
 
-Different instrument versions must not be pooled as if they were identical without explicit version handling. For genuine v3.3 data:
+v3.3 and v3.4 questionnaire item responses can be compared more directly than earlier questionnaire versions because the 62 questionnaire items and 17 raw subscales are unchanged, but the baseline self-report and derived result schema changed and must be versioned explicitly.
 
-1. inspect response-quality flags, item distributions, floor/ceiling effects and corrected item-rest correlations;
-2. estimate omega for each hypothesized subscale, with alpha as a secondary familiar statistic;
-3. use EFA/CFA to test the expanded factor structure, especially masculine vs feminine expression, romantic vs physical attraction, libido vs attraction intensity, romantic desire vs target-specific attraction, and relationship openness vs multi-partner preference;
-4. test whether male/female/nonbinary target attraction factors are empirically separable or better represented by another model;
-5. test `relationship_openness` and `multi_partner` for discriminant validity rather than assuming they are opposite ends of one axis;
-6. compare numeric self-ratings with matched questionnaire scores using signed and absolute gaps, not “accuracy” labels;
-7. compare categorical self-identities with continuous questionnaire profiles descriptively and with appropriate group-size safeguards;
-8. test measurement invariance / DIF across assigned-sex and gender-identity groups before comparing group means;
-9. revise weak or cross-loading items in a new version rather than silently rescoring historical records.
+For v3.4 data:
+
+1. continue item-level reliability, item-rest, omega, EFA/CFA and DIF work on the 17 raw subscales;
+2. analyze each 0–1 baseline axis distribution for clustering, midpoint/default effects and floor/ceiling behavior;
+3. compare the seven self-report spectra with their derived questionnaire spectra using signed and absolute gap distributions;
+4. separately analyze agender/bigender/genderfluid respondents rather than forcing those states onto the numeric gender line;
+5. validate the straight↔bi/pan↔gay convenience transformation against the raw target-specific attraction profile before using it for group comparisons;
+6. retain `relationship_openness` and `multi_partner` as separate raw questionnaire variables even though the public relationship-structure spectrum combines them into a single 0–1 presentation axis;
+7. revise the questionnaire or derived-axis formulas only in a new version rather than silently changing historical scores.
