@@ -1,0 +1,68 @@
+name: mf01sm v4 recover
+
+on:
+  push:
+    branches: [fix/mf01sm-v4-recover]
+    paths:
+      - .github/workflows/mf01sm-v4-recover.yml
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/mf01sm-v4-recover
+          fetch-depth: 0
+      - name: Reconstruct exact v4 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p apps/mf01sm/src scripts
+          cat .v4parts/m.000 .v4parts/m.001 .v4parts/m.002 .v4parts/m.003 .v4parts/m.004 | base64 -d > apps/mf01sm/src/v4-model.js
+          cat .v4parts/g.000 .v4parts/g.001 .v4parts/g.002 .v4parts/g003.0 .v4parts/g003.1 .v4parts/g.004 .v4parts/g.005 .v4parts/g006.0 .v4parts/g006.1 .v4parts/g.007 .v4parts/g.008 | base64 -d > scripts/generate-mf01sm-current.mjs
+          cat .v4parts/rt.000 .v4parts/rt.001 | base64 -d > apps/mf01sm/src/current-runtime.js
+          cat .v4parts/tt.0 .v4parts/tt.1 .v4parts/tt.2 .v4parts/tt.3 | base64 -d > scripts/mf01sm-v4-regressions.mjs
+          cat .v4parts/d.000 .v4parts/d.001 | base64 -d > scripts/deploy-mf01sm-runtime.mjs
+          cat .v4parts/p.000 | base64 -d > package.json
+          node --check apps/mf01sm/src/v4-model.js
+          node --check apps/mf01sm/src/current-runtime.js
+          node --check scripts/generate-mf01sm-current.mjs
+          node --check scripts/mf01sm-v4-regressions.mjs
+          node --check scripts/deploy-mf01sm-runtime.mjs
+          node scripts/generate-mf01sm-current.mjs
+          node scripts/mf01sm-v4-regressions.mjs
+          grep -Fq "const VERSION = '4.0.0'" apps/mf01sm/src/current-runtime.js
+          grep -Fq "mf01sm-v4-independent-leaf" apps/mf01sm/src/v4-model.js
+          grep -Fq "mf01sm-v4-leaf-history" scripts/generate-mf01sm-current.mjs
+          grep -Fq "mf01sm-v4-regressions.mjs" package.json
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Full repository verification
+        run: pnpm check
+      - name: Commit only real v4 source and remove broken transfer scaffolding
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          rm -rf .v4parts
+          rm -f \
+            .github/workflows/mf01sm-v4-assemble.yml \
+            .github/workflows/mf01sm-v4-bundle.yml \
+            .github/workflows/mf01sm-v4-finalize.yml \
+            .github/workflows/mf01sm-v4-promote.yml \
+            .github/workflows/mf01sm-v4-stage-upload.yml \
+            .github/workflows/mf01sm-v4-recover.yml
+          git add -A
+          git commit -m 'Recover actual mf01sm v4.0.0 source'
+          git push origin HEAD:fix/mf01sm-v4-recover
