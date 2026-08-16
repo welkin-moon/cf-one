@@ -89,8 +89,9 @@ try {
 
   const bundlePath = await findJavaScript(outDirectory);
   const source = await readFile(bundlePath, 'utf8');
-  // Only use semantic/literal markers that survive esbuild. Source identifier names are not stable
-  // after bundling and must never be used as deployment gates.
+  // Only use ASCII semantic/literal markers that survive esbuild. Identifier names can be folded,
+  // and non-ASCII UI strings can be escaped. Page text/age labels are verified before bundling by
+  // generate-mf01sm-current.mjs and the rendered-page regressions.
   const requiredMarkers = [
     '3.8.0',
     'assigned-sex-v3.7-balanced-sm-fantasy',
@@ -102,10 +103,8 @@ try {
     's_like',
     'm_like',
     'mf01sm-v38-age-gate',
-    '13–99',
     'q.reverse?6-raw:raw',
     'sexual_attraction_direction',
-    '返回 Test 首页',
     'gender_identity_special',
     'run_thresholds',
     'response_quality_detail',
