@@ -20,6 +20,10 @@ function runWrangler(arguments_) {
   });
 }
 
+// Keep the production bundle flat: the legacy v3.1-v3.7 runtime chain is executed only here at
+// build time to snapshot the already-rendered pages. current-runtime.js itself imports no legacy code.
+await import('./generate-mf01sm-current.mjs');
+
 const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
 const token = process.env.CLOUDFLARE_API_TOKEN?.trim();
 if (!accountId || !/^[a-f0-9]{32}$/i.test(accountId) || !token) {
@@ -85,8 +89,32 @@ try {
 
   const bundlePath = await findJavaScript(outDirectory);
   const source = await readFile(bundlePath, 'utf8');
-  if (!source.includes('3.7.0') || !source.includes('assigned-sex-v3.7-balanced-sm-fantasy') || !source.includes('mixed-v37-sm-fantasy') || !source.includes('gender_style_masc') || !source.includes('gender_style_fem') || !source.includes('initiative01') || !source.includes('dominance') || !source.includes('s_like') || !source.includes('m_like') || !source.includes('mf01sm-v37-age-gate') || !source.includes('q.reverse?6-raw:raw') || !source.includes('sexual_attraction_direction') || !source.includes('返回 Test 首页') || !source.includes('gender_identity_special') || !source.includes('questionnaire schema/version mismatch') || !source.includes('run_thresholds') || !source.includes('response_quality_detail') || !source.includes('CF-Connecting-IP')) {
-    throw new Error('mf01sm runtime bundle is missing v3.7.0 S/M-like fantasy integrity markers; refusing to deploy.');
+  const requiredMarkers = [
+    '3.8.0',
+    'assigned-sex-v3.7-balanced-sm-fantasy',
+    'mixed-v37-sm-fantasy',
+    'gender_style_masc',
+    'gender_style_fem',
+    'initiative01',
+    'dominance',
+    's_like',
+    'm_like',
+    'mf01sm-v38-age-gate',
+    '13–99',
+    'q.reverse?6-raw:raw',
+    'sexual_attraction_direction',
+    '返回 Test 首页',
+    'gender_identity_special',
+    'run_thresholds',
+    'response_quality_detail',
+    'CF-Connecting-IP',
+    'MAX_BODY_CHARS'
+  ];
+  if (!requiredMarkers.every(marker => source.includes(marker))) {
+    throw new Error('mf01sm runtime bundle is missing v3.8.0 flat-runtime integrity markers; refusing to deploy.');
+  }
+  if (source.includes('mf01sm-v37-age-gate') || /n\s*<\s*16|age\s*<\s*16|n\s*>\s*90|age\s*>\s*90/.test(source)) {
+    throw new Error('mf01sm v3.8 bundle still contains an active legacy 16/90 age gate; refusing to deploy.');
   }
 
   const scriptName = 'mf01sm';
@@ -102,8 +130,8 @@ try {
     compatibility_flags: settings?.compatibility_flags || [],
     bindings: bindingNames.map(name => ({ type: 'inherit', name, version_id: 'latest' })),
     annotations: {
-      'workers/tag': `mf01sm-v3.7.0-${Date.now().toString(36)}`,
-      'workers/message': 'mf01sm v3.7.0 16plus consensual hypothetical S-M-like runtime'
+      'workers/tag': `mf01sm-v3.8.0-${Date.now().toString(36)}`,
+      'workers/message': 'mf01sm v3.8.0 flat current runtime'
     }
   };
 
@@ -118,11 +146,11 @@ try {
     body: JSON.stringify({
       strategy: 'percentage',
       versions: [{ percentage: 100, version_id: version.id }],
-      annotations: { 'workers/message': 'mf01sm v3.7.0 16plus consensual hypothetical S-M-like runtime' }
+      annotations: { 'workers/message': 'mf01sm v3.8.0 flat current runtime' }
     })
   });
   if (!deployment?.id) throw new Error('Cloudflare created no mf01sm runtime deployment id.');
-  console.log(`mf01sm v3.7.0 runtime ${version.id} deployed at 100%; 16+ age gate, separate S-like/M-like hypothetical scores, nonsexual personality dimensions and historical storage behavior are active.`);
+  console.log(`mf01sm v3.8.0 runtime ${version.id} deployed at 100%; production no longer bundles the legacy runtime chain, client age is 13–99, and normal saves use one D1 write with KV only on failure.`);
 } finally {
   await rm(outDirectory, { recursive: true, force: true });
 }
