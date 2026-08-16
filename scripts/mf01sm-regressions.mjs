@@ -59,10 +59,20 @@ assert.equal(questions.filter(q => q.key === 'gender_style_masc' || q.key === 'g
 assert.equal(questions.filter(q => q.key === 'initiative' || q.key === 'dominance' || q.key === 'autonomy').length, 15, 'v3.6 must contain 15 nonsexual interpersonal-role items');
 assert.ok(questions.filter(q => q.key === 'gender_style_masc' || q.key === 'gender_style_fem').every(q => !/性吸引|性欲|恋爱|伴侣|出生指派性别/.test(q.text)), 'gender-coded style items must not depend on sex/romance/self-ID wording');
 
+const mmpiInspired = questions.filter(q => q.inspiration === 'MMPI-Mf-domain-paraphrase');
+assert.equal(mmpiInspired.length, 9, 'v3.6 should contain nine explicitly marked MMPI-Mf-domain paraphrases');
+const inspiredText = mmpiInspired.map(q => q.text).join('\n');
+assert.match(inspiredText, /机械|工程|自然科学/, 'MMPI-inspired domains should include technical/mechanical interest');
+assert.match(inspiredText, /诗歌|人物关系|情绪氛围/, 'MMPI-inspired domains should include literary/affective interest');
+assert.match(inspiredText, /花店|植物|园艺/, 'MMPI-inspired domains should include plant/gardening interest');
+assert.match(inspiredText, /饭|甜点/, 'MMPI-inspired domains should include cooking/hosting interest');
+assert.match(inspiredText, /戏剧|舞台|唱歌/, 'MMPI-inspired domains should include performance/drama interest');
+assert.match(inspiredText, /日记|照片|票根/, 'MMPI-inspired domains should include autobiographical keepsake/journaling interest');
+
 const pairs = new Map();
 for (const q of questions) if (q.pair) pairs.set(q.pair, [...(pairs.get(q.pair) || []), q.id]);
 assert.equal(pairs.size, 11, 'v3.6 should retain eleven focused semantic parallel pairs');
 for (const [pair, ids] of pairs) assert.equal(ids.length, 2, `parallel pair ${pair} must contain exactly two items`);
 assert.equal(questions.filter(q => q.reverse).length, 2, 'v3.6 should include exactly two deliberate reverse-keyed items');
 
-console.log(`mf01sm v3.6 regressions passed: ${questions.length} responses, ${sexualCount}/50 sexuality-related, 14 gender-style, 15 interpersonal, ${pairs.size} semantic pairs.`);
+console.log(`mf01sm v3.6 regressions passed: ${questions.length} responses, ${sexualCount}/50 sexuality-related, 14 gender-style, 15 interpersonal, ${mmpiInspired.length} MMPI-Mf-domain paraphrases, ${pairs.size} semantic pairs.`);
