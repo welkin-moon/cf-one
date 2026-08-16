@@ -1,108 +1,162 @@
-# mf01sm v3.5 measurement notes
+# mf01sm v3.6 measurement notes
 
-mf01sm is an exploratory self-report questionnaire, not a clinical diagnostic instrument. Version 3.5 keeps the 17 construct scores and 62-response structure, but deliberately changes the item wording and response presentation to a mixed-format, scenario-oriented questionnaire. It is therefore a substantive questionnaire version and must not be pooled with v3.4 as if the item instrument were unchanged.
+mf01sm is an exploratory self-report questionnaire, not a clinical diagnostic instrument. Version 3.6 is a substantive redesign that reduces the questionnaire's previous over-weighting of sexuality/romance and restores broad, nonsexual personality-style and interpersonal-role dimensions.
+
+The v3.6 design is **inspired only at the construct-architecture level** by older broad personality inventories such as the MMPI family, which historically includes masculinity/femininity and gender-role scales. mf01sm does not copy MMPI items, scoring keys, norms or interpretations and must not be presented as an MMPI substitute or derivative clinical instrument.
 
 ## Questionnaire structure
 
-v3.5 contains 62 responses: 60 scored items and two instructed-response quality checks. The 17 raw subscales remain:
+v3.6 contains **52 responses: 50 scored items and two instructed-response quality checks**. The 50 substantive items are deliberately balanced:
 
-- assigned-sex-aligned gender direction
-- cross-assigned gender direction
-- nonbinary fit
-- masculine gender expression
-- feminine gender expression
-- romantic attraction to men
-- romantic attraction to women
-- romantic attraction to nonbinary/gender-diverse people
-- physical/sexual attraction to men
-- physical/sexual attraction to women
-- physical/sexual attraction to nonbinary/gender-diverse people
-- libido / sexual drive
-- desire for a romantic relationship itself
-- consensual relationship openness
-- comfort/interest in multiple simultaneous consensual romantic relationships (`multi_partner`)
-- interpersonal initiative
-- decision autonomy
+- 9 assigned-sex-relative gender-direction / nonbinary-fit items: 18%
+- 14 nonsexual gender-coded style items: 28%
+- 12 attraction / romance / libido / relationship-structure items: 24%
+- 15 nonsexual interpersonal-role items: 30%
 
-Every scored response still maps monotonically to an integer from 1 to 5, and each raw subscale remains the unweighted item mean mapped linearly to 0–100. This keeps the scoring machinery simple while allowing the user-facing item formats to vary.
+This replaces v3.5, where attraction/romance/libido/relationship constructs occupied 34 of 60 substantive responses (56.7%). v3.6 should therefore be treated as a new instrument version rather than pooled directly with v3.5 item-level data.
 
-## Mixed response formats
+The 17 raw v3.6 subscales are:
 
-v3.5 removes the repeated global “非常不符合 ↔ 非常符合” presentation. Items now use several response styles selected to fit the prompt:
+1. assigned-sex-aligned gender direction (`gender_aligned`)
+2. cross-assigned gender direction (`gender_cross`)
+3. nonbinary fit (`nonbinary`)
+4. traditionally masculine-coded nonsexual style (`gender_style_masc`)
+5. traditionally feminine-coded nonsexual style (`gender_style_fem`)
+6. romantic attraction to men (`rom_m`)
+7. romantic attraction to women (`rom_f`)
+8. romantic attraction to nonbinary/gender-diverse people (`rom_nb`)
+9. physical/sexual attraction to men (`phys_m`)
+10. physical/sexual attraction to women (`phys_f`)
+11. physical/sexual attraction to nonbinary/gender-diverse people (`phys_nb`)
+12. libido / sexual-drive intensity (`libido`)
+13. desire for a romantic relationship itself (`romantic_desire`)
+14. consensual relationship openness (`relationship_openness`)
+15. interaction initiative / response style (`initiative`)
+16. nonsexual interpersonal following ↔ leading preference (`dominance`)
+17. personal decision autonomy (`autonomy`)
 
-- short scenario cards with five ordered reactions
-- frequency responses
-- comfort responses
-- likelihood responses
-- intuitive-fit / vibe responses
-- desire/intention responses
-- intensity responses
-- discrete five-position sliders
-- two playful instructed-response checks
+Every scored item still maps to an ordered integer from 1 to 5. Each raw subscale is the unweighted mean of its keyed item values, mapped linearly to 0–100. Two deliberately reverse-keyed items are transformed as `6 - raw` before subscale scoring.
 
-The response styles are only presentation/wording formats. For scoring they preserve a common direction: larger values indicate more of the construct named by the item key. Semantic parallel pairs remain directionally aligned so their absolute 1–5 differences can still contribute to the response-quality indicator.
+## Nonsexual masculinity / femininity style
 
-Because changing item wording and response format can change measurement properties, v3.5 requires fresh reliability/factor analysis. Similar construct names do not imply numerical interchangeability with v3.4.
+The main new v3.6 construct is a pair of **independent** nonsexual style scores rather than a single mutually exclusive gender-role line.
+
+`gender_style_masc` uses original mf01sm items about culturally masculine-coded tendencies such as competition, technical/mechanical problem solving, instrumental problem-first coping, function/efficiency preference, challenge seeking and related task style.
+
+`gender_style_fem` uses original mf01sm items about culturally feminine-coded tendencies such as emotional cue sensitivity, aesthetic/detail attention, care/comfort behavior, affectionate expression and sentimental/ritual detail.
+
+Important interpretation constraints:
+
+- neither score reads or uses the respondent's self-ID;
+- neither score uses assigned sex in scoring;
+- neither score asks whether the respondent *feels male/female*;
+- the two scores can both be high, both low, or differ strongly;
+- they are culture-coded stereotype/style dimensions, **not biological masculinity/femininity and not gender identity**;
+- item calibration and labels are exploratory and require local empirical validation.
+
+For the public 0–1 presentation, `gender_expression` is derived as:
+
+`clamp(0.5 + (gender_style_fem - gender_style_masc) / 200)`
+
+The two raw scores remain visible in the result because a one-dimensional position cannot distinguish high-high from low-low profiles.
+
+## 0 / 1 initiative axis
+
+v3.6 restores a public **0 ↔ 1 interaction axis** from the existing initiative construct:
+
+- `0`: more likely to wait, respond, or let another person start
+- `0.5`: flexible / context-dependent
+- `1`: more likely to initiate, propose, organize or move an interaction forward
+
+The items use everyday nonsexual situations: group planning, restarting stalled conversations, resolving a stalemate, organizing an activity and taking the first step when everyone is waiting.
+
+The public value is `initiative01 = initiative / 100`. Legacy `top` / `bot` compatibility fields remain aliases for initiative and its inverse, but the public wording is deliberately nonsexual.
+
+## Following ↔ leading and autonomy
+
+v3.6 adds a separate `dominance` subscale for **nonsexual interpersonal control/leadership preference**:
+
+- low: more comfortable following another person's clear direction
+- middle: collaborative / negotiated control
+- high: more comfortable setting direction, pace and task structure
+
+This is intentionally distinct from `autonomy`. A person can like another person taking the lead while still keeping strong personal boundaries, or enjoy leading shared tasks while being comfortable delegating personal decisions.
+
+The main 13+ questionnaire does **not** add a sadism/masochism or BDSM scale. The `dominance` axis is a nonsexual interpersonal analogue only and should not be labeled or interpreted as sexual S/M.
+
+For legacy compatibility in v3.6, `d = dominance` and `s = 100 - dominance`; `autonomy` remains stored separately as a first-class raw subscale.
+
+## Attraction and relationship items
+
+v3.6 keeps attraction and relationship information but makes it a minority of the questionnaire: **12 of 50 substantive items (24%)**.
+
+It retains separate target-specific romantic and physical/sexual attraction scores for men, women and nonbinary/gender-diverse people, but each target-specific subscale is now intentionally brief. These scores are therefore useful for exploratory profile display but should not be treated as high-reliability stand-alone clinical scales without empirical support.
+
+Libido, romantic desire and consensual relationship openness each use two items. The v3.5 separate `multi_partner` raw construct is removed from v3.6; the public relationship-structure position is now `relationship_openness / 100`.
 
 ## Baseline spectra: statistics only
 
-The baseline continues to use unticked continuous HTML range controls with `min=0`, `max=1`, `step=0.001`. The UI explicitly states that the baseline **does not enter questionnaire scoring**. It is stored for descriptive statistics and self-position-versus-questionnaire comparison only.
+The first-page baseline remains unchanged in purpose: it is **not used in questionnaire scoring**. It stores seven 0–1 self-position spectra for descriptive statistics and self-position-versus-questionnaire comparison:
 
-The seven public baseline spectra are:
+1. gender identity
+2. gender expression
+3. sexual-attraction direction (men ↔ balanced/bi-pan ↔ women)
+4. sexual-attraction intensity
+5. libido
+6. romantic tendency
+7. relationship structure
 
-1. gender identity: `0 = male`, `0.5 = nonbinary`, `1 = female`
-2. gender expression: `0 = highly masculine`, `0.5 = androgynous`, `1 = highly feminine`
-3. sexual-attraction direction: `0 = attraction toward men`, `0.5 = bi/pan/broadly balanced direction`, `1 = attraction toward women`
-4. sexual-attraction intensity: `0 = very low/none`, `0.5 = intermediate/grey area`, `1 = very strong/clear`
-5. libido / sexual-drive intensity: `0 = low`, `0.5 = ordinary`, `1 = high`
-6. romantic tendency: `0 = aromantic/very low romantic desire`, `0.5 = interested`, `1 = strongly romantic`
-7. relationship structure: `0 = monogamous`, `0.5 = open/non-exclusive`, `1 = poly/multiple romantic partners`
+Gender identity keeps the axis-outside `agender`, `bigender`, and `genderfluid` alternatives.
 
-The attraction-direction axis is intentionally target-based rather than respondent-relative. It uses **men ↔ women**, not heterosexual ↔ homosexual or other-gender ↔ same-gender wording. This avoids making the axis depend on the respondent's assigned or current gender.
+The important v3.6 change is that the questionnaire-side gender-expression/style estimate is computed from the 14 nonsexual behavior/interest items and **does not read the baseline gender-expression slider**. This makes the self-position ↔ questionnaire comparison meaningful rather than circular.
 
-Gender identity keeps the v3.4 axis-outside alternatives: exactly one of `agender`, `bigender`, or `genderfluid` can replace the numeric male–nonbinary–female position.
+## Questionnaire-derived public axes
 
-## Questionnaire-derived 0–1 axes
+`scores.axes01` contains ten public 0–1 values:
 
-v3.5 stores `scores.axes01` as the public presentation profile:
+- `gender_identity`: questionnaire male/nonbinary/female barycentric position
+- `gender_expression`: nonsexual masculine/feminine style position derived from the two independent style scores
+- `sexual_attraction_direction`: target-based men ↔ women position from physical-attraction target scores, with nonbinary evidence centered
+- `sexual_attraction_intensity`: maximum of the three physical-attraction target scores
+- `libido`
+- `romantic_tendency`
+- `relationship_structure`
+- `initiative01`: response/wait ↔ initiate/act
+- `dominance`: follow ↔ lead
+- `autonomy`: delegate ↔ self-decide
 
-- `gender_identity`: barycentric male/female/nonbinary position derived from the gender-direction subscales
-- `gender_expression`: `expression_position / 100`
-- `sexual_attraction_direction`: `(phys_f + 0.5 * phys_nb) / (phys_m + phys_f + phys_nb)`, after putting the three source scores on the same 0–1 scale; this yields 0 toward men, 1 toward women and centers nonbinary-target evidence
-- `sexual_attraction_intensity`: `max(phys_m, phys_f, phys_nb) / 100`
-- `libido`: `libido / 100`
-- `romantic_tendency`: `romantic_desire / 100`
-- `relationship_structure`: `(relationship_openness + multi_partner) / 200`
+Only the first seven have baseline self-position comparators. The last three are questionnaire-only interpersonal axes.
 
-The one-dimensional attraction-direction axis is a convenience visualization. Raw male/female/nonbinary target scores remain primary for research because distinct multidirectional profiles can map to the same 0–1 position.
+## Mixed response formats
 
-## Self-report versus questionnaire comparison
+v3.6 keeps the v3.5 mixed, playful presentation rather than reverting to a wall of identical agree/disagree items. It uses scenario cards, frequency, comfort, likelihood, intuitive-fit, desire, intensity and discrete slider formats.
 
-`scores.self_test_comparison` stores the baseline `self`, questionnaire `test`, absolute `gap` and signed gap for each compatible numeric axis. A gender-identity gap remains null for agender/bigender/genderfluid selections because those states are not single numeric points on the male–nonbinary–female line.
-
-The comparison is descriptive only. A large gap is not dishonesty, invalidity, diagnosis or an automatic exclusion rule.
-
-## Entertainment presentation
-
-v3.5 restores an explicitly playful result layer inspired by the earlier project presentation:
-
-- a deterministic entertainment tag such as “软糯小蓝莓”, “光谱漫游者” or “浪漫信号塔”
-- several short profile chips
-- a blurred flag-like color backdrop
-- a link back to the Test directory for more tests
-
-`scores.fun_tag` and `scores.fun_chips` are saved for reproducibility of the displayed result. They are presentation outputs, not psychometric constructs. The flag backdrop is a visual easter egg and must not be interpreted as assigning an identity label.
+The two attention checks remain playful duck/cat instructed-response items. All formats still resolve to ordered 1–5 values for scoring and response-quality checks.
 
 ## Response quality
 
-The response-quality indicator remains a caution flag, not a psychological validity scale. It combines:
+The response-quality indicator remains a caution flag rather than a psychological validity score. It combines:
 
-- two instructed-response checks
-- consistency of selected semantic parallel pairs
-- unusually long identical-response runs / extreme option concentration
-- unusually short average response time
+- two instructed-response checks;
+- eleven focused semantic parallel pairs;
+- long identical-answer runs / extreme option concentration;
+- average response speed.
 
-There are still 60 substantive responses, so the proportional long-string thresholds remain 17 / 23 / 30. Mixed visual response types still store values 1–5, allowing the existing pattern and pair logic to operate, but v3.5 quality behavior should be re-evaluated empirically because mixed formats can alter response distributions.
+With 50 substantive responses, the existing proportional long-string rules resolve to:
+
+- mild: 15
+- mid: 19
+- severe: 25
+
+These thresholds are stored in `response_quality_detail.run_thresholds` and required by the v3.6 save gate.
+
+Because the item mix changed substantially, pair-score and response-pattern distributions must be re-evaluated on v3.6 data rather than assuming v3.5 cutoffs have identical empirical behavior.
+
+## Entertainment presentation
+
+The result keeps blurred color/flag-like backgrounds, deterministic entertainment tags and profile chips, but v3.6 shifts the tag logic toward nonsexual dimensions. Examples include `双核变色龙`, `软糯小蓝莓`, `温柔调度员`, `硬核推进器`, `舰桥总指挥`, `副驾驶小云朵` and `先手小火箭`.
+
+These are presentation easter eggs, not psychometric constructs or identity diagnoses. `scores.fun_tag` and `scores.fun_chips` are saved so the archived record can reproduce what the respondent saw.
 
 ## Storage and schema gate
 
@@ -110,13 +164,13 @@ Raw browser geolocation and `CF-Connecting-IP` remain stored for regional analys
 
 D1 remains the primary archive. Successful submissions perform one D1 insert and no routine KV mirror; KV is failure fallback only. Historical records are not rewritten.
 
-v3.5 uses:
+v3.6 uses:
 
-- `version = 3.5.0`
-- `_schema = 'assigned-sex-v3.5-mixed-format'`
-- `_question_format = 'mixed-v35'`
+- `version = 3.6.0`
+- `_schema = 'assigned-sex-v3.6-balanced-personality'`
+- `_question_format = 'mixed-v36-balanced'`
 
-A v3.5 record must contain all 17 raw subscale scores, all 62 integer raw answers, the 17/23/30 response-quality thresholds, all seven questionnaire `axes01` values and a complete baseline spectrum object. Older declared versions continue through the v3.4/v3.3/v3.2/v3.1 gates so pages left open across deployments keep their actual version.
+A v3.6 record must contain all 17 raw subscale scores, all 52 integer raw answers, 15/19/25 run thresholds, all ten public `axes01` values and a complete seven-axis baseline self-report object. Older open pages continue through the v3.5/v3.4/v3.3/v3.2/v3.1 version gates.
 
 ## Version history
 
@@ -124,19 +178,21 @@ A v3.5 record must contain all 17 raw subscale scores, all 62 integer raw answer
 - v3.1.1: raw IP/GPS restoration and D1-primary/KV-fallback storage
 - v3.2.0: 58-item expanded profile
 - v3.2.1: schema-gated version archiving and length-scaled long-string thresholds
-- v3.3.0: 62-item / 17-subscale model with expanded attraction and relationship constructs
-- v3.4.0: unchanged v3.3 questionnaire items, but continuous 0–1 baseline/result spectra
-- v3.5.0: rewrites the 62-response questionnaire into mixed playful formats, changes the public attraction direction to men↔women, restores entertainment tags / blurred flag-like result styling, and adds the Test-directory return action
+- v3.3.0: 62-item / 17-subscale expanded attraction and relationship model
+- v3.4.0: continuous 0–1 baseline/result spectra
+- v3.5.0: mixed playful response formats, target-based men↔women attraction direction and restored entertainment presentation
+- v3.6.0: 52-response balanced profile; sexuality/romance reduced from 56.7% to 24% of substantive items; independent nonsexual masculine/feminine style scales; public 0/1 initiative axis; nonsexual follow↔lead dominance axis; autonomy retained separately
 
 ## Validation plan
 
-v3.5 should be analyzed as a new item-form version:
+v3.6 needs fresh psychometric analysis:
 
-1. inspect per-item response distributions separately by response format and look for format-specific floor/ceiling or midpoint effects;
-2. estimate corrected item-rest correlations and omega for each hypothesized subscale;
-3. run EFA/CFA on v3.5 rather than assuming the v3.4 structure automatically transfers;
-4. examine semantic-pair differences by pair and by response format before interpreting the aggregate pair-quality score;
-5. test the men↔women attraction-direction convenience transform against the three raw target-specific attraction scores;
-6. compare baseline 0–1 self-position with questionnaire-derived axes using signed and absolute gaps only as descriptive convergence evidence;
-7. keep relationship openness and multi-partner preference as separate raw constructs even though the public relationship spectrum combines them;
-8. revise weak items or response formats only in a new version rather than silently rescoring existing records.
+1. estimate corrected item-rest correlations and omega for the two new gender-style scales, initiative, dominance and autonomy;
+2. test whether masculine-coded and feminine-coded items behave as two correlated dimensions rather than one bipolar factor;
+3. inspect high-high and low-low style profiles separately before interpreting the derived 0–1 style position;
+4. run EFA/CFA on the full v3.6 item set rather than assuming the v3.5 structure transfers;
+5. examine whether dominance and autonomy separate empirically or collapse into one factor;
+6. inspect the reduced target-attraction items for instability and avoid over-interpreting single-item target scores;
+7. compare baseline gender-expression self-position with the non-self-ID questionnaire style position as descriptive convergence evidence only;
+8. inspect response-quality pair differences and long-string behavior under the shorter 52-response format;
+9. revise weak or stereotype-heavy gender-style items only in a new version rather than silently changing historical scoring.
