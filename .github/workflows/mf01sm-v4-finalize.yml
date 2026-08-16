@@ -1,0 +1,77 @@
+name: mf01sm v4 finalize
+
+on:
+  push:
+    branches: [feature/mf01sm-v4]
+    paths:
+      - .github/workflows/mf01sm-v4-finalize.yml
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  verify-clean-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/mf01sm-v4
+          fetch-depth: 0
+      - name: Assert real v4 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f apps/mf01sm/src/v4-model.js
+          test -f scripts/mf01sm-v4-regressions.mjs
+          test ! -d .v4parts
+          grep -Fq 'mf01sm-v4-independent-leaf' apps/mf01sm/src/v4-model.js
+          grep -Fq 'mf01sm-v4-leaf-history' scripts/generate-mf01sm-current.mjs
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Full repository check
+        run: pnpm check
+      - name: Remove v4 transfer scaffolding
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for f in \
+            .github/workflows/mf01sm-v4-promote.yml \
+            .github/workflows/mf01sm-v4-bundle.yml \
+            .github/workflows/mf01sm-v4-stage-upload.yml \
+            .github/workflows/mf01sm-v4-finalize.yml \
+            .deploy/mf01sm-worker.js \
+            .deploy/mf01sm-bundle-meta.txt \
+            .deploy/mf01sm-v4-stage-upload.json \
+            .deploy/mf01sm-v4-stage-meta.txt; do
+            if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then git rm -f "$f"; fi
+          done
+          if ! git diff --cached --quiet; then
+            git commit -m 'Remove mf01sm v4 transfer scaffolding'
+            git push origin HEAD:feature/mf01sm-v4
+          fi
+      - name: Merge clean v4 source to main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if git diff --quiet origin/main...HEAD; then
+            echo 'main already contains this v4 source'
+            exit 0
+          fi
+          pr="$(gh pr list --head feature/mf01sm-v4 --base main --state open --json number --jq '.[0].number')"
+          if [ -z "$pr" ]; then
+            gh pr create --base main --head feature/mf01sm-v4 --title 'Build mf01sm v4 independent leaf model' --body 'Reuse-first mf01sm v4.0.0: stable 3.8.x/v2-style item inheritance, independent leaf scoring, direct nonbinary identity, aesthetics, leaf radar, blurred flag, complete statistics, and v4.x reusable answer history.'
+            pr="$(gh pr list --head feature/mf01sm-v4 --base main --state open --json number --jq '.[0].number')"
+          fi
+          gh pr merge "$pr" --squash --subject 'Build mf01sm v4 independent leaf model' --body 'Reuse-first v4.0.0 with independent result leaves, complete statistics, and portable v4.x answer migration.'
