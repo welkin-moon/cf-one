@@ -1,6 +1,6 @@
 import { MAIN_HTML, ADMIN_HTML } from './current-pages.generated.js';
 
-const VERSION = '3.8.0';
+const VERSION = '3.8.1';
 const MAX_BODY_CHARS = 256000;
 const MAX_SCORES_CHARS = 100000;
 
@@ -60,7 +60,7 @@ async function saveRecord(request, env) {
   catch { return json({ error: 'invalid JSON' }, 400); }
   if (!data || typeof data !== 'object' || Array.isArray(data)) return json({ error: 'JSON object required' }, 400);
 
-  // v3.8 deliberately keeps business/profile validation on the client. The server only normalizes
+  // v3.8.x deliberately keeps business/profile validation on the client. The server only normalizes
   // bounded fields and protects storage. In particular, there is no server-side age range check.
   const version = normalizedVersion(data.version);
   const nickname = text(data.nickname, 80);
@@ -99,7 +99,7 @@ async function saveRecord(request, env) {
       ).run();
     return json({ success: true, d1: true, kv: false, version });
   } catch (error) {
-    console.error('mf01sm.v38-d1-save', error);
+    console.error('mf01sm.v381-d1-save', error);
   }
 
   try {
@@ -116,7 +116,7 @@ async function saveRecord(request, env) {
     }));
     return json({ success: true, d1: false, kv: true, version });
   } catch (error) {
-    console.error('mf01sm.v38-kv-save', error);
+    console.error('mf01sm.v381-kv-save', error);
     return json({ error: 'archive unavailable' }, 503);
   }
 }
@@ -140,7 +140,7 @@ async function readAdminData(request, env) {
     }
   } catch (error) {
     d1Available = false;
-    console.warn('mf01sm.v38-d1-read', error);
+    console.warn('mf01sm.v381-d1-read', error);
   }
 
   // Avoid the expensive KV list/get scan during normal admin reads. It remains explicit recovery only.
@@ -174,7 +174,7 @@ async function readAdminData(request, env) {
         } catch {}
       }
     } catch (error) {
-      console.warn('mf01sm.v38-kv-read', error);
+      console.warn('mf01sm.v381-kv-read', error);
     }
   }
 
