@@ -1,6 +1,6 @@
 import { MAIN_HTML, ADMIN_HTML } from './current-pages.generated.js';
 
-const VERSION = '3.8.1';
+const VERSION = '3.8.2';
 const MAX_BODY_CHARS = 256000;
 const MAX_SCORES_CHARS = 100000;
 
@@ -77,7 +77,6 @@ async function saveRecord(request, env) {
   const ip = text(request.headers.get('CF-Connecting-IP') || request.headers.get('cf-connecting-ip') || 'Unknown', 96);
   const location = text(data.location, 160) || 'Unavailable';
 
-  // One normal archive write: D1 primary. KV is only a failure fallback, never a routine mirror write.
   try {
     await env.mf01smsql.prepare(`INSERT INTO records
       (id, version, nickname, age, self_gender, self_orientation, self_likert, location, ip, assign_gender, tag, scores, timestamp)
@@ -99,7 +98,7 @@ async function saveRecord(request, env) {
       ).run();
     return json({ success: true, d1: true, kv: false, version });
   } catch (error) {
-    console.error('mf01sm.v381-d1-save', error);
+    console.error('mf01sm.v382-d1-save', error);
   }
 
   try {
@@ -116,7 +115,7 @@ async function saveRecord(request, env) {
     }));
     return json({ success: true, d1: false, kv: true, version });
   } catch (error) {
-    console.error('mf01sm.v381-kv-save', error);
+    console.error('mf01sm.v382-kv-save', error);
     return json({ error: 'archive unavailable' }, 503);
   }
 }
@@ -140,10 +139,9 @@ async function readAdminData(request, env) {
     }
   } catch (error) {
     d1Available = false;
-    console.warn('mf01sm.v381-d1-read', error);
+    console.warn('mf01sm.v382-d1-read', error);
   }
 
-  // Avoid the expensive KV list/get scan during normal admin reads. It remains explicit recovery only.
   const includeKv = url.searchParams.get('include_kv') === '1' || !d1Available;
   if (includeKv) {
     try {
@@ -174,7 +172,7 @@ async function readAdminData(request, env) {
         } catch {}
       }
     } catch (error) {
-      console.warn('mf01sm.v381-kv-read', error);
+      console.warn('mf01sm.v382-kv-read', error);
     }
   }
 
