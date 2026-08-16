@@ -58,7 +58,15 @@ function patchAdmin(source) {
   );
   html = html.replace(
     '.hidden{display:none}</style>',
-    '.hidden{display:none}.record-details{margin-top:8px}.record-details summary{cursor:pointer;color:#d0bcff;font-weight:700}.record-details pre{max-width:760px;max-height:520px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#17151b;border:1px solid #39363d;border-radius:12px;padding:12px;color:#ded7e2}</style>'
+    '.hidden{display:none}.record-details{margin-top:8px}.record-details summary{cursor:pointer;color:#d0bcff;font-weight:700}.record-details pre{max-width:760px;max-height:520px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#17151b;border:1px solid #39363d;border-radius:12px;padding:12px;color:#ded7e2}.kv-toggle{display:flex;align-items:center;gap:8px;margin-top:12px;color:#bdb5c2;font-size:12px}.kv-toggle input{padding:0;width:auto;min-height:0;accent-color:#d0bcff}</style>'
+  );
+  html = html.replace(
+    '<button id="go">Access</button><p id="msg"></p>',
+    '<button id="go">Access</button><label class="kv-toggle"><input id="includeKv" type="checkbox">包含 KV 历史 / 回退数据（额外读取；1.x 在这里）</label><p id="msg"></p>'
+  );
+  html = html.replace(
+    "fetch('/api/admin/data?pwd='+encodeURIComponent(pwd))",
+    "fetch('/api/admin/data?pwd='+encodeURIComponent(pwd)+(document.getElementById('includeKv')?.checked?'&include_kv=1':''))"
   );
   html = html.replace(
     'values.forEach((v,i)=>{const td=document.createElement(\'td\');td.textContent=esc(v);if(i===9)td.className=\'tag\';tr.appendChild(td);});body.appendChild(tr);});',
@@ -66,6 +74,7 @@ function patchAdmin(source) {
   );
   html = html.replace('历史版本继续原样保留。v3.1 起把浪漫吸引与身体/性吸引分开；Ver 列直接来自每条记录的 version。', '历史版本继续原样保留。Scores 列保留紧凑摘要；展开“完整记录 / Raw”可查看该条记录返回的全部字段，包括所有原始子量表、axes01、第一页自评、self↔test 差值、response_quality_detail、raw answers、schema/question format 与娱乐 tag/chips。');
   if (!html.includes('完整记录 / Raw')) throw new Error('Admin full-record details control was not injected.');
+  if (!html.includes('includeKv') || !html.includes('include_kv=1')) throw new Error('Admin optional KV-history control was not injected.');
   return html;
 }
 

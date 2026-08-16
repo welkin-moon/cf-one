@@ -46,6 +46,7 @@ const adminHtml = await adminResponse.text();
 assert.ok(adminHtml.includes("startsWith('3.8')") && adminHtml.includes("startsWith('3.7')"), 'admin renderer must understand both v3.8 and v3.7 score shapes');
 assert.ok(adminHtml.includes('完整记录 / Raw'), 'admin rows must expose a lazy full-record details control');
 assert.ok(adminHtml.includes('JSON.stringify(item,null,2)'), 'admin full-record details must contain the complete returned record rather than another summary');
+assert.ok(adminHtml.includes('includeKv') && adminHtml.includes('include_kv=1'), 'admin must expose an opt-in KV history/recovery load path instead of scanning KV by default');
 
 let inserted = null;
 let kvWrites = 0;
@@ -102,4 +103,4 @@ const oversizedResponse = await current.fetch(new Request('https://mf01sm.intern
 }), env);
 assert.equal(oversizedResponse.status, 413, 'server must retain payload-size protection against storage abuse');
 
-console.log(`mf01sm v3.8.1 regressions passed: flat static pages, ${currentQuestions.length} unchanged responses, historical-style roast tags, complete lazy admin records, client age 13–99, one D1 write / zero routine KV writes.`);
+console.log(`mf01sm v3.8.1 regressions passed: flat static pages, ${currentQuestions.length} unchanged responses, historical-style roast tags, complete lazy admin records + opt-in KV history, client age 13–99, one D1 write / zero routine KV writes.`);
