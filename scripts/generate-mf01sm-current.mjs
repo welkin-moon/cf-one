@@ -18,64 +18,103 @@ async function render(pathname) {
 
 const FUN_BLOCK = String.raw`/* mf01sm-v382-v1-roast-tags */const fun=(()=>{
 const a=axes01;
-const seed=Math.round(scores.gender_style_masc*3+scores.gender_style_fem*5+scores.initiative*7+scores.dominance*11+scores.autonomy*13+scores.s_like*17+scores.m_like*19+scores.romantic_desire*23+scores.libido*29);
-const pick=(arr,off=0)=>arr[Math.abs(seed+off)%arr.length];
 const amab=state.assignGender==='AMAB';
+const age=Number(document.getElementById('age')?.value||0);
+const smEligible=age>=16;
+const selfAxes=(scores._self_report&&scores._self_report.axes)||{};
+const comparison=scores.self_test_comparison||{};
 const attM=Number(scores.attr_m||0),attF=Number(scores.attr_f||0);
-const panish=attM>=55&&attF>=55&&Math.abs(attM-attF)<=18;
-const aceish=a.sexual_attraction_intensity<=.28||scores.ace>=72;
-const cross=scores.gender_cross>=62&&scores.gender_cross-scores.gender_aligned>=16;
-const nb=scores.nonbinary>=70&&scores.nonbinary>=Math.max(scores.gender_aligned,scores.gender_cross)+5;
-let left='取向薛定谔 / 光谱游民';
-if(nb)left=pick(['第四性 / 电子盆栽','无相切换体 / 二元系统拒绝访问','性别流体史莱姆 / 暂无固定形态']);
+const panish=attM>=52&&attF>=52&&Math.abs(attM-attF)<=18&&a.sexual_attraction_intensity>=.30;
+const aceish=Number(scores.ace||0)>=78&&a.sexual_attraction_intensity<=.28;
+const cross=scores.gender_cross>=64&&scores.gender_cross-scores.gender_aligned>=14;
+const agender=scores.nonbinary>=76&&scores.nonbinary>=Math.max(scores.gender_aligned,scores.gender_cross)+8;
+let left;
+if(agender)left='第四性 / 电子盆栽';
 else if(cross&&amab){
-  if(panish||attF>=attM+12)left=pick(['里百合风味 / 裙摆叛逃者','跨向姬圈 / 二次元女主候补','里百合 / 软糯反差体']);
-  else if(attM>=attF+12)left=pick(['软糯小蓝梁 / 男生单推','跨向直女风味 / 蓝梁捕获器','反差系小蓝梁 / 男生雷达满格']);
-  else left=pick(['跨向漂流体 / 性别流动','反差变身系 / 阵营未定','跨指派高浓度 / 光谱乱逛']);
+  if(attM>=attF+18)left='软糯小蓝梁 / 蓝梁诱捕器';
+  else left='里百合 / 药娘预备役 / 软糯伪娘';
 }else if(cross&&!amab){
-  if(panish||attM>=attF+12)left=pick(['√-16先锋 / 跨向少年感','跨向男仔 / 腐向雷达','反差硬派 / 少年漫住民']);
-  else if(attF>=attM+12)left=pick(['铁T风味 / 姬圈硬派','跨向姬圈 / 铁血短发怪','姬圈硬派 / 反差少年感']);
-  else left=pick(['跨向漂流体 / 性别流动','反差变身系 / 阵营未定','跨指派高浓度 / 光谱乱逛']);
-}else if(aceish)left=pick(['纯爱战神 / 柏拉图待机','清心寡欲圣体 / 感情线慢热','低吸引隐藏角色 / 恋爱随缘']);
-else if(panish)left=pick(['全向捕获体 / 荤素不忌','杂食系生物 / 双向开图','全阵营友好 / 光谱漫游者']);
-else if(amab&&attM>=attF+16)left=pick(['彩虹男生单推 / 男生雷达满格','男生单推人 / 彩虹侧写','男向专注型 / 单线雷达']);
-else if(!amab&&attF>=attM+16)left=pick(['柑橘味姬圈 / 百合单推人','姬圈雷达满格 / 柑橘系住民','女向专注型 / 百合单线']);
-else if(amab&&attF>=attM+16)left=pick(['平平无奇顺直男','异性向常规款 / 无隐藏剧情','顺直男标准皮肤']);
-else if(!amab&&attM>=attF+16)left=pick(['普通顺直女','异性向常规款 / 无隐藏剧情','顺直女标准皮肤']);
-else left=pick(['取向薛定谔 / 光谱游民','光谱乱逛 / 暂无固定阵营','自由游走体 / 阵营加载中']);
+  if(attF>=attM+18)left='铁T / 姬圈老保';
+  else left='√-16先锋 / 腐改跨';
+}else if(aceish)left='纯爱战神 / 戒断圣体';
+else if(panish)left='杂食恶犬 / 荤素不忌';
+else if(amab&&attM>=50&&attM>=attF+18)left='击剑爱好者 / 哇是成都人';
+else if(!amab&&attF>=50&&attF>=attM+18)left='柑橘味香女 / 兰州特产';
+else if(amab&&attF>=attM)left='平平无奇顺直男';
+else if(!amab&&attM>=attF)left='普通顺直女';
+else if(amab)left='击剑爱好者 / 哇是成都人';
+else left='柑橘味香女 / 兰州特产';
 
-const i=scores.initiative,d=scores.dominance,aut=scores.autonomy;
-let right='端水大师 / 薛定谔的XP';
-if(scores.s_like>=80&&scores.m_like>=80)right=pick(['双向戏剧体 / 左右横跳','混沌双修 / 两边都能演','高压剧情全都要 / 反差成精'],7);
-else if(scores.s_like>=80&&d>=65)right=pick(['高压剧情党 / 控场魔王','危险气场 / 规则大概率你来写','小恶魔控场 / 笑着加难度'],11);
-else if(scores.m_like>=80&&d<=35)right=pick(['受压剧情党 / 绒布球圣体','绝赞绒布球 / 白给小动物','软体承压怪 / 一推就开始演'],13);
-else if(i>=72&&d>=72)right=pick(['爹系暴君 / 控场狂魔','强势开荒 / 规则我来写','霸道领队 / 全员跟上'],17);
-else if(i<=28&&d<=28)right=pick(['绝赞绒布球 / 白给小动物','专属抱枕 / 等人来捞','被动软体 / 轻轻一推就走'],19);
-else if(i>=72&&d<=28)right=pick(['奉献型忠犬 / 冲锋在前听指挥','行动派忠犬 / 干完活再点头','高行动低话语权 / 忙着忙着就交托了'],23);
-else if(i<=28&&d>=72)right=pick(['钓系控场怪 / 躺着当军师','腹黑操盘手 / 本人拒绝先手','嘴强王者 / 等别人递话筒'],29);
-else if(i>=72)right=pick(['无情推土机 / 钝角','先手小霸王 / 冷场克星','行动派 / 计划必须往前走'],31);
-else if(i<=28)right=pick(['躺平咸鱼 / 纯粹承伤体','回应型生物 / 谁先开口谁负责','被动待机 / 叫到才启动'],37);
-else if(d>=72)right=pick(['精神总指挥 / 手不一定动','控场怪 / 方向盘焊死','女王式调度 / 先看你们表演'],41);
-else if(d<=28)right=pick(['纸老虎 / 窝里横','跟随型刺客 / 嘴上不服','温顺外壳 / 偶尔炸毛'],43);
-else if(Math.abs(i-50)<=12&&Math.abs(d-50)<=12)right=pick(['端水大师 / 薛定谔的XP','混沌缝合怪 / 什么都有一点','自由游走体 / 暂无固定站位'],47);
-else if(aut>=75)right=pick(['边界感满格 / 谁都别替我按确认','自主权钉死 / 建议可以决定不行','最终解释权 / 本人永久持有'],53);
+const i=Number(scores.initiative||0),d=Number(scores.dominance||0),sl=Number(scores.s_like||0),ml=Number(scores.m_like||0);
+const active=i>=72,passive=i<=28;
+const highS=sl>=74&&d>=58;
+const highM=ml>=74&&d<=42;
+const microActiveM=i>=56&&i<72&&ml>=56&&ml<74&&d<=48;
+const microPassiveS=i>28&&i<=44&&sl>=56&&sl<74&&d>=52;
+const pureActive=i>=68&&sl<58&&ml<58;
+const purePassive=i<=32&&sl<58&&ml<58;
+const allMid=[i,d,sl,ml].every(v=>Math.abs(v-50)<=12);
+const chaotic=(sl>=70&&ml>=70)||(Math.max(i,d,sl,ml)-Math.min(i,d,sl,ml)>=55);
+let right;
+if(smEligible&&active&&highS)right='爹系狂攻 / 强制爱暴君 / 掌控狂';
+else if(smEligible&&passive&&highM)right='绝赞绒布球 / 惹人怜爱的M圣体 / 专属抱枕';
+else if(smEligible&&active&&highM)right='提款机忠犬 / 奉献型败犬 / 苦主圣体';
+else if(smEligible&&passive&&highS)right='钓系绿茶 / 腹黑榨汁机 / 女王受';
+else if(microActiveM)right='纸老虎 / 窝里横';
+else if(microPassiveS)right='又菜又爱玩 / 嘴强王者';
+else if(pureActive)right='无情推土机 / 钝角';
+else if(purePassive)right='躺平咸鱼 / 纯粹承伤体';
+else if(allMid)right='端水大师 / 薛定谔的XP';
+else if(chaotic)right='究极缝合怪';
+else if(i>=62)right='无情推土机 / 钝角';
+else if(i<=38)right='躺平咸鱼 / 纯粹承伤体';
+else right='端水大师 / 薛定谔的XP';
 
 const tag=left+' · '+right;
 const chips=[];
-chips.push(cross?'跨指派倾向明显':nb?'非二元适配高':'性别方向较混合');
-chips.push(panish?'双向吸引':aceish?'低吸引频段':attM>=attF+16?'偏男吸引':attF>=attM+16?'偏女吸引':'吸引方向混合');
+chips.push(cross?'跨指派倾向明显':agender?'非二元适配高':'性别方向较混合');
+chips.push(panish?'双向吸引':aceish?'低吸引频段':attM>=attF+18?'偏男吸引':attF>=attM+18?'偏女吸引':'吸引方向混合');
 chips.push(i>=68?'先手偏多':i<=32?'等先手':'先后手都行');
 chips.push(d>=68?'控场偏强':d<=32?'更爱跟随':'协商控场');
-chips.push(aut>=68?'自主边界强':aut<=32?'比较能交托':'自主可商量');
-if(scores.s_like>=65||scores.m_like>=65)chips.push('戏剧控场 '+scores.s_like+' / 戏剧交托 '+scores.m_like);
+chips.push(scores.autonomy>=68?'自主边界强':scores.autonomy<=32?'比较能交托':'自主可商量');
+if(smEligible&&(sl>=65||ml>=65))chips.push('戏剧控场 '+scores.s_like+' / 戏剧交托 '+scores.m_like);
+
+let roastSelf='';
+const selfGenderNumeric=typeof selfAxes.gender_identity==='number'&&Number.isFinite(selfAxes.gender_identity);
+const selfLooksAssigned=selfGenderNumeric&&(amab?selfAxes.gender_identity<=.35:selfAxes.gender_identity>=.65);
+const meanGap=Number(comparison.mean_absolute_gap);
+const directionGap=Number((comparison.sexual_attraction_direction||{}).gap);
+const intensityGap=Number((comparison.sexual_attraction_intensity||{}).gap);
+if(amab&&cross&&selfLooksAssigned&&Number((comparison.gender_identity||{}).gap)>=.24){
+  roastSelf='填表的时候装模作样选个认同生理性别，一做题底裤都掉光了。嘴上说着是直男，潜意识里早就想穿裙子当软糯伪娘了。别装了，建议早点爆金币重开。';
+}else if(panish&&((Number.isFinite(directionGap)&&directionGap>=.24)||(Number.isFinite(intensityGap)&&intensityGap>=.28))){
+  roastSelf='对外装单身纯爱，做题雷达乱响。是个活的碳基生物你都想上去蹭两下，荤素不忌的杂食党实锤。什么都能一口吞，建议平时多吃点健胃消食片。';
+}else if(Number.isFinite(meanGap)&&meanGap<=.16){
+  roastSelf='表层认知和潜意识底层的欲望基本一致。没什么好骂的，老实人一个，XP正常得甚至有点无聊，建议直接去隔壁相亲角排队。';
+}
+
+let roastXp='';
+if(smEligible&&active&&highS){
+  roastXp='爹味溢出屏幕了。又要在上面掌控节奏，又要精神施压，浑身散发着强制爱暴君的味道。建议收敛点你的危险幻想，实在不行自己去踩缝纫机。';
+}else if(smEligible&&passive&&highM){
+  roastXp='极度缺爱、一戳就倒的绝赞绒布球。别人稍微强势点、对你坏一点，你就恨不得原地滑跪叫主人。这么好骗的体质，出门建议把反诈中心焊死在手机上。';
+}else if(smEligible&&passive&&highS){
+  roastXp='躺在下面还要精神PUA别人，经典的钓系绿茶榨汁机。看着人畜无害，其实一肚子坏水，就喜欢看别人为你当牛做马的样子是吧？';
+}else if(smEligible&&active&&highM){
+  roastXp='行动上的巨人，精神上的M。身体在上面卖力，精神却极度渴望被践踏、被使用。纯纯的提款机忠犬圣体，这辈子就是给别人当垫脚石的命。';
+}else if(smEligible&&aceish){
+  roastXp='电子阳痿晚期。对世俗的摩擦毫不感冒，看破红尘的纯爱战神。这辈子的清心寡欲，足以让你死后烧出十斤舍利子。';
+}else if(chaotic){
+  roastXp='成分过于复杂，属于什么亚文化圈子都能缝合一下的究极端水大师。啥都沾点啥都不精，XP薛定谔化，建议你自己去开个盘口。';
+}
+
 let flag='linear-gradient(135deg,#5bcefa,#f5a9b8,#fff,#b7a4ff,#5bcefa)';
-if(nb)flag='linear-gradient(135deg,#111,#666,#fff,#8c63ff,#f5df4d)';
-else if(cross&&amab)flag='linear-gradient(135deg,#5bcefa,#f5a9b8,#fff,#f5a9b8,#5bcefa)';
-else if(cross&&!amab)flag='linear-gradient(135deg,#5bcefa,#f5a9b8,#fff,#f5a9b8,#5bcefa)';
+if(agender)flag='linear-gradient(135deg,#111,#666,#fff,#8c63ff,#f5df4d)';
+else if(cross)flag='linear-gradient(135deg,#5bcefa,#f5a9b8,#fff,#f5a9b8,#5bcefa)';
 else if(panish)flag='linear-gradient(135deg,#d60270,#9b4f96,#0038a8)';
 else if(aceish)flag='linear-gradient(135deg,#000,#a3a3a3,#fff,#800080)';
 else if(d>=72)flag='linear-gradient(135deg,#552583,#a66dd4,#f3d8ff,#547bd1)';
-return{tag,chips,flag};})();scores.fun_tag=fun.tag;scores.fun_chips=fun.chips;`;
+return{tag,chips,flag,roastSelf,roastXp};})();scores.fun_tag=fun.tag;scores.fun_chips=fun.chips;`;
 
 function patchMain(source) {
   let html = source;
@@ -104,6 +143,10 @@ function patchMain(source) {
   const funPattern = /const fun=\(\(\)=>\{[\s\S]*?\}\)\(\);scores\.fun_tag=fun\.tag;scores\.fun_chips=fun\.chips;/;
   if (!funPattern.test(html)) throw new Error('Could not locate the legacy entertainment-tag block.');
   html = html.replace(funPattern, FUN_BLOCK);
+  const analysisMarker = "+personality+interaction+sm+'</div><div class=\"result-block\"><b>第一页自评 ↔ 题目画像</b>";
+  const roastAnalysis = "+personality+interaction+sm+'</div>'+(fun.roastSelf||fun.roastXp?'<div class=\"result-block\"><b>结果页“打脸”解析</b>'+(fun.roastSelf?'<p>'+fun.roastSelf+'</p>':'')+(fun.roastXp?'<p>'+fun.roastXp+'</p>':'')+'</div>':'')+'<div class=\"result-block\"><b>第一页自评 ↔ 题目画像</b>";
+  if (!html.includes(analysisMarker)) throw new Error('Could not locate the result analysis insertion point.');
+  html = html.replace(analysisMarker, roastAnalysis);
   html = html.replace('它们不是现实行为判断。', '它们不是现实行为判断；上方娱乐 tag 可以很嘴欠，但不是诊断、身份判定或现实同意。');
 
   return html;
@@ -156,7 +199,8 @@ if (JSON.stringify(beforeQuestions) !== JSON.stringify(afterQuestions)) {
 }
 if (afterQuestions.length !== 58) throw new Error(`Expected 58 v3.7/v3.8 responses, found ${afterQuestions.length}.`);
 if (!mainHtml.includes('v3.8.2') || !mainHtml.includes('mf01sm-v38-age-gate')) throw new Error('v3.8.2 page markers are missing.');
-if (!mainHtml.includes('mf01sm-v382-v1-roast-tags') || !mainHtml.includes('里百合风味 / 裙摆叛逃者') || !mainHtml.includes('爹系暴君 / 控场狂魔') || !mainHtml.includes('端水大师 / 薛定谔的XP')) throw new Error('v3.8.2 v1-style entertainment-tag layer is incomplete.');
+if (!mainHtml.includes('mf01sm-v382-v1-roast-tags') || !mainHtml.includes('里百合 / 药娘预备役 / 软糯伪娘') || !mainHtml.includes('爹系狂攻 / 强制爱暴君 / 掌控狂') || !mainHtml.includes('端水大师 / 薛定谔的XP') || !mainHtml.includes('结果页“打脸”解析')) throw new Error('v3.8.2 v1-style entertainment-tag layer is incomplete.');
+if (mainHtml.includes('里百合风味 / 裙摆叛逃者') || mainHtml.includes('爹系暴君 / 控场狂魔')) throw new Error('An assistant-authored v3.8.2 tag survived the locked user vocabulary.');
 if (!/id="age"[^>]*min="13"[^>]*max="99"/.test(mainHtml)) throw new Error('Generated age input is not 13–99.');
 if (!mainHtml.includes('13–99')) throw new Error('Generated age description does not expose 13–99.');
 if (/n\s*<\s*16|age\s*<\s*16|n\s*>\s*90|age\s*>\s*90/.test(mainHtml)) throw new Error('A legacy 16/90 client age gate survived v3.8.2 generation.');
@@ -166,4 +210,4 @@ export const MAIN_HTML = ${JSON.stringify(mainHtml)};\
 export const ADMIN_HTML = ${JSON.stringify(adminHtml)};\
 `;
 await writeFile(outputPath, generated, 'utf8');
-console.log(`Generated mf01sm ${VERSION} static pages from the unchanged v3.7 measurement snapshot (${afterQuestions.length} responses; v1-style roast tags + complete admin details only).`);
+console.log(`Generated mf01sm ${VERSION} static pages from the unchanged v3.7 measurement snapshot (${afterQuestions.length} responses; locked v1-style roast tags + complete admin details only).`);
