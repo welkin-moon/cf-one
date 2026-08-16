@@ -4,7 +4,6 @@ import path from 'node:path';
 
 const { outputPath } = await import('./provision-cloudflare.mjs');
 const webDirectory = path.dirname(outputPath);
-const rootDirectory = path.resolve(webDirectory, '../..');
 
 function run(arguments_, cwd = webDirectory) {
   return new Promise((resolve, reject) => {
@@ -32,20 +31,6 @@ async function api(endpoint, init = {}) {
   headers.set('accept', 'application/json');
   if (init.body) headers.set('content-type', 'application/json');
   const response = await fetch(`${apiRoot}${endpoint}`, { ...init, headers });
-  const body = await response.json().catch(() => null);
-  if (!response.ok || !body?.success) {
-    const errors = body?.errors?.map(error => `${error.code ?? 'unknown'}: ${error.message ?? 'Cloudflare API error'}`).join('; ');
-    throw new Error(`Cloudflare API ${response.status} for ${endpoint}${errors ? `: ${errors}` : ''}`);
-  }
-  return body.result;
-}
-
-async function apiForm(endpoint, form) {
-  const response = await fetch(`${apiRoot}${endpoint}`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
-    body: form
-  });
   const body = await response.json().catch(() => null);
   if (!response.ok || !body?.success) {
     const errors = body?.errors?.map(error => `${error.code ?? 'unknown'}: ${error.message ?? 'Cloudflare API error'}`).join('; ');
@@ -106,64 +91,22 @@ async function reconcileMirrorDomains(config) {
   console.log(`Mirror-domain reconciliation complete: ${active.length} active, ${repaired} repaired.`);
 }
 
-async function deployMf01sm() {
-  const scriptName = 'mf01sm';
-  const source = await readFile(path.join(rootDirectory, 'apps/mf01sm/src/index.js'), 'utf8');
-  const settings = await api(`/accounts/${accountId}/workers/scripts/${scriptName}/settings`);
-  const bindingNames = Array.isArray(settings?.bindings) ? settings.bindings.map(binding => String(binding?.name || '')).filter(Boolean) : [];
-  if (!bindingNames.includes('mf01sm') || !bindingNames.includes('mf01smsql')) {
-    throw new Error('mf01sm historical KV/D1 bindings are missing; refusing to deploy a version that could fork storage.');
-  }
-  if (!bindingNames.includes('ADMIN')) {
-    throw new Error('mf01sm ADMIN runtime binding is missing; refusing to deploy and break the historical data console.');
-  }
-
-  const tag = `mf01sm-v3-${Date.now().toString(36)}`;
-  const metadata = {
-    main_module: 'worker.js',
-    compatibility_date: settings?.compatibility_date || '2026-05-07',
-    compatibility_flags: settings?.compatibility_flags || [],
-    bindings: bindingNames.map(name => ({ type: 'inherit', name, version_id: 'latest' })),
-    annotations: {
-      'workers/tag': tag,
-      'workers/message': 'mf01sm v3 automated build'
-    }
-  };
-  const form = new FormData();
-  form.set('metadata', JSON.stringify(metadata));
-  form.set('worker.js', new Blob([source], { type: 'application/javascript+module' }), 'worker.js');
-
-  // Workers Builds pins Wrangler to its connected Worker. Use the REST path so
-  // the auxiliary version is unambiguously created under the mf01sm service.
-  const version = await apiForm(`/accounts/${accountId}/workers/scripts/${scriptName}/versions?bindings_inherit=strict`, form);
-  if (!version?.id) throw new Error('Cloudflare uploaded mf01sm but returned no version id.');
-
-  const deployment = await api(`/accounts/${accountId}/workers/scripts/${scriptName}/deployments`, {
-    method: 'POST',
-    body: JSON.stringify({
-      strategy: 'percentage',
-      versions: [{ percentage: 100, version_id: version.id }],
-      annotations: { 'workers/message': 'mf01sm v3 automated build' }
-    })
-  });
-  if (!deployment?.id) throw new Error('Cloudflare created no mf01sm deployment id.');
-  console.log(`mf01sm version ${version.id} deployed at 100%; historical bindings inherited from the previous version.`);
-}
-
 await run(['d1', 'migrations', 'apply', process.env.CF_ONE_D1_NAME?.trim() || 'cf-one', '--remote', '--config', 'wrangler.generated.jsonc']);
 const generatedConfig = JSON.parse(await readFile(outputPath, 'utf8'));
 await reconcileMirrorDomains(generatedConfig);
-await deployMf01sm();
 
-// Code/config versions and traffic deployments are deliberately separated from
-// Worker triggers. `wrangler deploy` synchronizes configured routes/custom
-// domains, which can delete API-created mN.20100823.xyz mirror domains because
-// those dynamic hostnames are intentionally absent from the checked-in config.
-// `versions upload` + `versions deploy` updates the Worker version without
-// touching routes/domains. Trigger changes must be performed explicitly with
-// `wrangler triggers deploy` during infrastructure maintenance.
+// mf01sm is intentionally NOT uploaded here. v3.8 has one authoritative deployment path:
+// scripts/deploy-mf01sm-runtime.mjs. This removes the old intermediate core version/deployment
+// and its extra settings/upload/deployment API calls.
+
+// Code/config versions and traffic deployments are deliberately separated from Worker triggers.
+// `wrangler deploy` synchronizes configured routes/custom domains, which can delete API-created
+// mN.20100823.xyz mirror domains because those dynamic hostnames are intentionally absent from
+// the checked-in config. `versions upload` + `versions deploy` updates the Worker version without
+// touching routes/domains. Trigger changes must be performed explicitly with `wrangler triggers
+// deploy` during infrastructure maintenance.
 const versionTag = `cf-one-${Date.now().toString(36)}`;
 await run(['versions', 'upload', '--config', 'wrangler.generated.jsonc', '--tag', versionTag, '--message', 'cf-one automated build']);
 await run(['versions', 'deploy', '--config', 'wrangler.generated.jsonc', '--version-tag', versionTag, '--yes', '--message', 'cf-one automated build']);
 
-console.log(`cf-one-apex version ${versionTag} deployed; Worker routes and Custom Domains were not synchronized, and active mirror domains were reconciled from D1.`);
+console.log(`cf-one-apex version ${versionTag} deployed; Worker routes and Custom Domains were not synchronized, active mirror domains were reconciled from D1, and mf01sm is deployed only once by its dedicated flat-runtime deployer.`);
