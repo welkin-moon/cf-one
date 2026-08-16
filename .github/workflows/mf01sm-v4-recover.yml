@@ -22,12 +22,17 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p apps/mf01sm/src scripts
-          cat .v4parts/model.000 .v4parts/model.001 .v4parts/model.002 .v4parts/model.003 | base64 -d > apps/mf01sm/src/v4-model.js
-          cat .v4parts/g.000 .v4parts/g.001 .v4parts/g.002 .v4parts/g003.0 .v4parts/g003.1 .v4parts/g.004 .v4parts/g.005 .v4parts/g006.0 .v4parts/g006.1 .v4parts/g.007 .v4parts/g.008 | base64 -d > scripts/generate-mf01sm-current.mjs
-          cat .v4parts/rt.000 .v4parts/rt.001 | base64 -d > apps/mf01sm/src/current-runtime.js
-          cat .v4parts/tt.0 .v4parts/tt.1 .v4parts/tt.2 .v4parts/tt.3 | base64 -d > scripts/mf01sm-v4-regressions.mjs
-          cat .v4parts/d.000 .v4parts/d.001 | base64 -d > scripts/deploy-mf01sm-runtime.mjs
-          cat .v4parts/p.000 | base64 -d > package.json
+          decode_parts() {
+            out="$1"; shift
+            : > "$out"
+            for f in "$@"; do base64 -d "$f" >> "$out"; done
+          }
+          decode_parts apps/mf01sm/src/v4-model.js .v4parts/model.000 .v4parts/model.001 .v4parts/model.002 .v4parts/model.003
+          decode_parts scripts/generate-mf01sm-current.mjs .v4parts/g.000 .v4parts/g.001 .v4parts/g.002 .v4parts/g003.0 .v4parts/g003.1 .v4parts/g.004 .v4parts/g.005 .v4parts/g006.0 .v4parts/g006.1 .v4parts/g.007 .v4parts/g.008
+          decode_parts apps/mf01sm/src/current-runtime.js .v4parts/rt.000 .v4parts/rt.001
+          decode_parts scripts/mf01sm-v4-regressions.mjs .v4parts/tt.0 .v4parts/tt.1 .v4parts/tt.2 .v4parts/tt.3
+          decode_parts scripts/deploy-mf01sm-runtime.mjs .v4parts/d.000 .v4parts/d.001
+          decode_parts package.json .v4parts/p.000
           cat > /tmp/v4.sha256 <<'EOF'
           5112b0cedd9f6a6340d6327f1f371f8bf33ece64015a0987f5249738a19767d3  apps/mf01sm/src/v4-model.js
           b1d8d1b41623e2fcdaedc90bca19ec2affbe81e0e9bba66bae6f95487f42673c  apps/mf01sm/src/current-runtime.js
