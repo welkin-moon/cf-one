@@ -4,5 +4,6 @@ node_modules/
 dist/
 .dev.vars
 wrangler.generated.jsonc
+apps/mf01sm/src/current-pages.generated.js
 *.log
 .DS_Store
