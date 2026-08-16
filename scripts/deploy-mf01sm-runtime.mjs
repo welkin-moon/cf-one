@@ -93,7 +93,7 @@ try {
   // and non-ASCII UI strings can be escaped. Page text/age labels are verified before bundling by
   // generate-mf01sm-current.mjs and the rendered-page regressions.
   const requiredMarkers = [
-    '3.8.1',
+    '3.8.2',
     'assigned-sex-v3.7-balanced-sm-fantasy',
     'mixed-v37-sm-fantasy',
     'gender_style_masc',
@@ -103,7 +103,7 @@ try {
     's_like',
     'm_like',
     'mf01sm-v38-age-gate',
-    'mf01sm-v381-roast-tags',
+    'mf01sm-v382-v1-roast-tags',
     'q.reverse?6-raw:raw',
     'sexual_attraction_direction',
     'gender_identity_special',
@@ -116,10 +116,10 @@ try {
   ];
   const missingMarkers = requiredMarkers.filter(marker => !source.includes(marker));
   if (missingMarkers.length) {
-    throw new Error(`mf01sm runtime bundle is missing stable v3.8.1 integrity markers: ${missingMarkers.join(', ')}; refusing to deploy.`);
+    throw new Error(`mf01sm runtime bundle is missing stable v3.8.2 integrity markers: ${missingMarkers.join(', ')}; refusing to deploy.`);
   }
   if (source.includes('mf01sm-v37-age-gate') || /n\s*<\s*16|age\s*<\s*16|n\s*>\s*90|age\s*>\s*90/.test(source)) {
-    throw new Error('mf01sm v3.8.1 bundle still contains an active legacy 16/90 age gate; refusing to deploy.');
+    throw new Error('mf01sm v3.8.2 bundle still contains an active legacy 16/90 age gate; refusing to deploy.');
   }
 
   const scriptName = 'mf01sm';
@@ -135,8 +135,8 @@ try {
     compatibility_flags: settings?.compatibility_flags || [],
     bindings: bindingNames.map(name => ({ type: 'inherit', name, version_id: 'latest' })),
     annotations: {
-      'workers/tag': `mf01sm-v3.8.1-${Date.now().toString(36)}`,
-      'workers/message': 'mf01sm v3.8.1 roast tags and complete admin details'
+      'workers/tag': `mf01sm-v3.8.2-${Date.now().toString(36)}`,
+      'workers/message': 'mf01sm v3.8.2 locked v1-style tags and polished roast analysis'
     }
   };
 
@@ -151,11 +151,11 @@ try {
     body: JSON.stringify({
       strategy: 'percentage',
       versions: [{ percentage: 100, version_id: version.id }],
-      annotations: { 'workers/message': 'mf01sm v3.8.1 roast tags and complete admin details' }
+      annotations: { 'workers/message': 'mf01sm v3.8.2 locked v1-style tags and polished roast analysis' }
     })
   });
   if (!deployment?.id) throw new Error('Cloudflare created no mf01sm runtime deployment id.');
-  console.log(`mf01sm v3.8.1 runtime ${version.id} deployed at 100%; questionnaire content is unchanged, result tags use the v1/v2-inspired roast layer, and admin rows expose lazy full-record details.`);
+  console.log(`mf01sm v3.8.2 runtime ${version.id} deployed at 100%; questionnaire content is unchanged, result tags use the locked v1-style layer, and the result page includes polished two-part roast analysis.`);
 } finally {
   await rm(outDirectory, { recursive: true, force: true });
 }
