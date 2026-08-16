@@ -85,8 +85,8 @@ try {
 
   const bundlePath = await findJavaScript(outDirectory);
   const source = await readFile(bundlePath, 'utf8');
-  if (!source.includes('3.5.0') || !source.includes('assigned-sex-v3.5-mixed-format') || !source.includes('mixed-v35') || !source.includes('sexual_attraction_direction') || !source.includes('quiz-card-option') || !source.includes('fun_tag') || !source.includes('返回 Test 首页') || !source.includes('gender_identity_special') || !source.includes('questionnaire schema/version mismatch') || !source.includes('run_thresholds') || !source.includes('response_quality_detail') || !source.includes('CF-Connecting-IP')) {
-    throw new Error('mf01sm runtime bundle is missing v3.5.0 mixed-format integrity markers; refusing to deploy.');
+  if (!source.includes('3.6.0') || !source.includes('assigned-sex-v3.6-balanced-personality') || !source.includes('mixed-v36-balanced') || !source.includes('gender_style_masc') || !source.includes('gender_style_fem') || !source.includes('initiative01') || !source.includes('dominance') || !source.includes('q.reverse?6-raw:raw') || !source.includes('sexual_attraction_direction') || !source.includes('返回 Test 首页') || !source.includes('gender_identity_special') || !source.includes('questionnaire schema/version mismatch') || !source.includes('run_thresholds') || !source.includes('response_quality_detail') || !source.includes('CF-Connecting-IP')) {
+    throw new Error('mf01sm runtime bundle is missing v3.6.0 balanced-personality integrity markers; refusing to deploy.');
   }
 
   const scriptName = 'mf01sm';
@@ -102,8 +102,8 @@ try {
     compatibility_flags: settings?.compatibility_flags || [],
     bindings: bindingNames.map(name => ({ type: 'inherit', name, version_id: 'latest' })),
     annotations: {
-      'workers/tag': `mf01sm-v3.5.0-${Date.now().toString(36)}`,
-      'workers/message': 'mf01sm v3.5.0 mixed-format playful runtime'
+      'workers/tag': `mf01sm-v3.6.0-${Date.now().toString(36)}`,
+      'workers/message': 'mf01sm v3.6.0 balanced nonsexual personality runtime'
     }
   };
 
@@ -118,11 +118,11 @@ try {
     body: JSON.stringify({
       strategy: 'percentage',
       versions: [{ percentage: 100, version_id: version.id }],
-      annotations: { 'workers/message': 'mf01sm v3.5.0 mixed-format playful runtime' }
+      annotations: { 'workers/message': 'mf01sm v3.6.0 balanced nonsexual personality runtime' }
     })
   });
   if (!deployment?.id) throw new Error('Cloudflare created no mf01sm runtime deployment id.');
-  console.log(`mf01sm v3.5.0 runtime ${version.id} deployed at 100%; mixed-format questions, continuous baseline spectra, playful result presentation and D1-primary/KV-fallback storage are active.`);
+  console.log(`mf01sm v3.6.0 runtime ${version.id} deployed at 100%; nonsexual gender-coded style, 0/1 initiative, interpersonal dominance/autonomy and reduced sexuality weighting are active.`);
 } finally {
   await rm(outDirectory, { recursive: true, force: true });
 }
