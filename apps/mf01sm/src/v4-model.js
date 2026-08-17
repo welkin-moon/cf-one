@@ -1,4 +1,4 @@
-export const V4_VERSION = '4.0.0';
+export const V4_VERSION = '4.0.1';
 export const V4_SCHEMA = 'mf01sm-v4-independent-leaf';
 export const V4_QUESTION_FORMAT = 'mixed-v4-stable-reuse';
 

@@ -8,7 +8,7 @@ import {
 import { MAIN_HTML, ADMIN_HTML } from '../apps/mf01sm/src/current-pages.generated.js';
 import current from '../apps/mf01sm/src/current-runtime.js';
 
-assert.equal(V4_VERSION, '4.0.0');
+assert.equal(V4_VERSION, '4.0.1');
 assert.equal(V4_SCHEMA, 'mf01sm-v4-independent-leaf');
 assert.equal(V4_QUESTION_FORMAT, 'mixed-v4-stable-reuse');
 assert.equal(V4_QUESTIONS.length, 58, 'v4 keeps the 58-response footprint');
@@ -64,17 +64,20 @@ r = classifyV4Result({...baseScores,attr_m:20,attr_f:20,sexual_expression:100},{
 assert.ok(r.tag.startsWith('纯爱战神 / 戒断圣体 · '),'low attraction classification must not be suppressed by high expression');
 
 for (const tag of LOCKED_TAG_VOCABULARY) assert.ok(MAIN_HTML.includes(tag),`locked vocabulary missing: ${tag}`);
-assert.match(MAIN_HTML,/v4\.x 答题复用/);
+assert.ok(MAIN_HTML.includes('本机答题记录'));
 assert.ok(MAIN_HTML.includes('0 / 1 自我感觉（可多选，但至少选一项）'));
 assert.ok(MAIN_HTML.includes("if(!selfRole01.length)return alert('0 / 1 自我感觉至少选一项；两项都可以选。')"));
 assert.ok(MAIN_HTML.includes('flag-haze') && MAIN_HTML.includes('filter:blur(42px)'),'blurred gradient flag must render');
-assert.ok(MAIN_HTML.includes('结果页叶片雷达') && MAIN_HTML.includes('radar-leaf'));
+assert.ok(MAIN_HTML.includes('维度雷达') && MAIN_HTML.includes('radar-leaf'));
 assert.ok(MAIN_HTML.includes('window.mf01smV4History'));
 assert.ok(MAIN_HTML.includes("return'MF01SM4:'+packPlain(historyCache)"),'copy/export must use portable uncompressed payloads');
 assert.ok(MAIN_HTML.includes("a.reuse===q.reuse"),'history reuse must require an unchanged reuse key');
 assert.ok(MAIN_HTML.includes("payload:'mf01sm-v4-record-1'"));
 assert.ok(MAIN_HTML.includes('_item_manifest=QUESTIONS.map'));
 assert.ok(MAIN_HTML.includes('reused_ids:[...state.reusedIds]'));
+for (const text of ['v4 把 0 / 1','reuse key','独立叶片雷达 · v4.x 稳定题目迁移','结果页叶片雷达','非二元认同分只来自','也可在控制台调用','旧版单轴','v4 终于','13–15 岁不会出现四组 16+ 极端娱乐后缀','作答质量 / 回传','统计已回传：','D1','KV fallback']) assert.ok(!MAIN_HTML.includes(text),`developer-facing copy leaked: ${text}`);
+assert.ok(!MAIN_HTML.includes('"origin":'),'question provenance must not be shipped in browser questionnaire JSON');
+assert.ok(!MAIN_HTML.includes("+(q.origin||'v4')"),'question header must not expose source provenance');
 assert.ok(ADMIN_HTML.includes('完整记录 / Raw') && ADMIN_HTML.includes('JSON.stringify(item,null,2)'));
 
 for (const [name,html] of [['main',MAIN_HTML],['admin',ADMIN_HTML]]) {
@@ -90,7 +93,7 @@ fullScores.response_quality=100;
 fullScores.response_quality_detail={attention_total:2,attention_passed:2,pair_score:100,straightline_ratio:1,duration_ms:123456,ms_per_item:2128,reused_count:58,run_thresholds:{mild:16,mid:22,severe:30}};
 fullScores._self_report={gender_label:'测试',orientation_label:'测试',role01:['0','1']};
 fullScores._item_manifest=V4_QUESTIONS.map(q=>({id:q.id,reuse:q.reuse,key:q.key||null,type:q.type,origin:q.origin||null,attention:q.attention||null}));
-fullScores._record={payload:'mf01sm-v4-record-1',version:V4_VERSION,schema:V4_SCHEMA,question_format:V4_QUESTION_FORMAT,profile:{nickname:'regression',age:16,assignGender:'AMAB',selfGender:'测试',selfOrientation:'测试',selfRole01:['0','1']},history:{source_version:'4.0.0',reused_ids:V4_QUESTIONS.map(q=>q.id)},timing:{started_at:1,finished_at:2,duration_ms:1},client:{language:'zh-CN',timezone:'Asia/Shanghai',viewport:[9999,9999],user_agent:'x'.repeat(320)},location:'31.230400, 121.473700',result:{tag:'test',chips:['a','b'],radar_axes:Object.fromEntries(V4_RADAR_AXES.map(([k])=>[k,fullScores[k]]))}};
+fullScores._record={payload:'mf01sm-v4-record-1',version:V4_VERSION,schema:V4_SCHEMA,question_format:V4_QUESTION_FORMAT,profile:{nickname:'regression',age:16,assignGender:'AMAB',selfGender:'测试',selfOrientation:'测试',selfRole01:['0','1']},history:{source_version:'4.0.1',reused_ids:V4_QUESTIONS.map(q=>q.id)},timing:{started_at:1,finished_at:2,duration_ms:1},client:{language:'zh-CN',timezone:'Asia/Shanghai',viewport:[9999,9999],user_agent:'x'.repeat(320)},location:'31.230400, 121.473700',result:{tag:'test',chips:['a','b'],radar_axes:Object.fromEntries(V4_RADAR_AXES.map(([k])=>[k,fullScores[k]]))}};
 const scoreJson=JSON.stringify(fullScores);
 assert.ok(scoreJson.length<180000,`complete score payload must fit runtime bound, got ${scoreJson.length}`);
 let inserted=null,kvWrites=0;
