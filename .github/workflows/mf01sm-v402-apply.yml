@@ -49,7 +49,8 @@ jobs:
                   line=line.replace('\\"','"')
               elif in_intro:
                   line=line.replace('\\"','"')
-                  if line == "'''": in_intro=False
+                  if line.rstrip().endswith("'''"):
+                      in_intro=False
               elif line.startswith('needle = '):
                   line='needle = \'<div class="result-block"><h3>结果页“打脸”解析</h3><div id="roast"></div></div>\''
               elif line.startswith('make_re = re.compile'):
