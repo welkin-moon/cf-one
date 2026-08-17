@@ -63,14 +63,21 @@ jobs:
           p.write_text('\n'.join(out)+'\n')
           PY
       - name: Syntax check patch
-        shell: bash
-        run: |
-          if ! python3 -m py_compile .tmp/mf01sm-v402-patch.py; then
-            nl -ba .tmp/mf01sm-v402-patch.py | sed -n '128,152p'
-            exit 1
-          fi
+        run: python3 -m py_compile .tmp/mf01sm-v402-patch.py
       - name: Apply focused patch
         run: python3 .tmp/mf01sm-v402-patch.py
+      - name: Keep generated question JSON boundary intact
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/generate-mf01sm-current.mjs')
+          s=p.read_text()
+          old="const QUESTIONS=${questionsJson};const ANSWER_COMPAT=${answerCompatJson};const SCORE_KEYS=${scoreKeysJson};const RADAR_AXES=${radarJson};"
+          new="const QUESTIONS=${questionsJson};const SCORE_KEYS=${scoreKeysJson};const ANSWER_COMPAT=${answerCompatJson};const RADAR_AXES=${radarJson};"
+          if s.count(old)!=1: raise SystemExit('generator constant-order target mismatch')
+          p.write_text(s.replace(old,new,1))
+          PY
       - name: Prove questionnaire scoring and tags were untouched
         shell: bash
         run: |
