@@ -17,23 +17,19 @@ jobs:
         with:
           ref: fix/mf01sm-v4-recover
           fetch-depth: 0
-      - name: Reconstruct and byte-verify exact v4 source
+      - name: Restore byte-exact v4 source archive
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p apps/mf01sm/src scripts
-          decode_parts() {
-            out="$1"; shift
-            : > "$out"
-            for f in "$@"; do base64 -d "$f" >> "$out"; done
-          }
-          decode_parts apps/mf01sm/src/v4-model.js .v4parts/model.000 .v4parts/model.001 .v4parts/model.002 .v4parts/model.003
-          decode_parts scripts/generate-mf01sm-current.mjs .v4parts/g.000 .v4parts/g.001 .v4parts/g.002 .v4parts/g003.0 .v4parts/g003.1 .v4parts/g.004 .v4parts/g.005 .v4parts/g006.0 .v4parts/g006.1 .v4parts/g.007 .v4parts/g.008
-          decode_parts apps/mf01sm/src/current-runtime.js .v4parts/rt.000 .v4parts/rt.001
-          decode_parts scripts/mf01sm-v4-regressions.mjs .v4parts/tt.0 .v4parts/tt.1 .v4parts/tt.2 .v4parts/tt.3
-          decode_parts scripts/deploy-mf01sm-runtime.mjs .v4parts/d.000 .v4parts/d.001
-          decode_parts package.json .v4parts/p.000
-          cat > /tmp/v4.sha256 <<'EOF'
+          cat .recover/v4.zip.b64.* > /tmp/mf01sm-v4.b64
+          test "$(wc -c < /tmp/mf01sm-v4.b64 | tr -d ' ')" = "45544"
+          base64 -d /tmp/mf01sm-v4.b64 > /tmp/mf01sm-v4-source.zip
+          echo 'f7a6bcf3d25e956480a471cf20c4db7d51b0290f2c0a0c244d1594c1ef620e9f  /tmp/mf01sm-v4-source.zip' | sha256sum -c -
+          rm -rf /tmp/v4src
+          mkdir -p /tmp/v4src
+          unzip -q /tmp/mf01sm-v4-source.zip -d /tmp/v4src
+          cd /tmp/v4src
+          cat > /tmp/v4-files.sha256 <<'EOF'
           5112b0cedd9f6a6340d6327f1f371f8bf33ece64015a0987f5249738a19767d3  apps/mf01sm/src/v4-model.js
           b1d8d1b41623e2fcdaedc90bca19ec2affbe81e0e9bba66bae6f95487f42673c  apps/mf01sm/src/current-runtime.js
           150e308db797c6aecaaf33eb035156a13e5a156467f362a3eea98941360db078  scripts/generate-mf01sm-current.mjs
@@ -41,7 +37,15 @@ jobs:
           217e1d74d8adff985c3a2f6a6a9d1264ea8d2cf0f9dc5bf1f3432988d68c553f  scripts/deploy-mf01sm-runtime.mjs
           b25df00bf690fcf59d597291ae3e57d2aec08338c871131a3d5c62743278a729  package.json
           EOF
-          sha256sum -c /tmp/v4.sha256
+          sha256sum -c /tmp/v4-files.sha256
+          cd "$GITHUB_WORKSPACE"
+          mkdir -p apps/mf01sm/src scripts
+          cp /tmp/v4src/apps/mf01sm/src/v4-model.js apps/mf01sm/src/v4-model.js
+          cp /tmp/v4src/apps/mf01sm/src/current-runtime.js apps/mf01sm/src/current-runtime.js
+          cp /tmp/v4src/scripts/generate-mf01sm-current.mjs scripts/generate-mf01sm-current.mjs
+          cp /tmp/v4src/scripts/mf01sm-v4-regressions.mjs scripts/mf01sm-v4-regressions.mjs
+          cp /tmp/v4src/scripts/deploy-mf01sm-runtime.mjs scripts/deploy-mf01sm-runtime.mjs
+          cp /tmp/v4src/package.json package.json
           node --check apps/mf01sm/src/v4-model.js
           node --check apps/mf01sm/src/current-runtime.js
           node --check scripts/generate-mf01sm-current.mjs
@@ -50,9 +54,9 @@ jobs:
           node scripts/generate-mf01sm-current.mjs
           node scripts/mf01sm-v4-regressions.mjs
           grep -Fq "const VERSION = '4.0.0'" apps/mf01sm/src/current-runtime.js
-          grep -Fq "mf01sm-v4-independent-leaf" apps/mf01sm/src/v4-model.js
-          grep -Fq "mf01sm-v4-leaf-history" scripts/generate-mf01sm-current.mjs
-          grep -Fq "mf01sm-v4-regressions.mjs" package.json
+          grep -Fq 'mf01sm-v4-independent-leaf' apps/mf01sm/src/v4-model.js
+          grep -Fq 'mf01sm-v4-leaf-history' scripts/generate-mf01sm-current.mjs
+          grep -Fq 'mf01sm-v4-regressions.mjs' package.json
       - uses: pnpm/action-setup@v4
         with:
           version: 10.13.1
@@ -63,13 +67,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Full repository verification
         run: pnpm check
-      - name: Commit only real v4 source and remove broken transfer scaffolding
+      - name: Commit real v4 source and remove broken transfer scaffolding
         shell: bash
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          rm -rf .v4parts
+          rm -rf .v4parts .recover
           rm -f \
             .github/workflows/mf01sm-v4-assemble.yml \
             .github/workflows/mf01sm-v4-bundle.yml \
@@ -78,5 +82,6 @@ jobs:
             .github/workflows/mf01sm-v4-stage-upload.yml \
             .github/workflows/mf01sm-v4-recover.yml
           git add -A
+          git status --short
           git commit -m 'Recover actual mf01sm v4.0.0 source'
           git push origin HEAD:fix/mf01sm-v4-recover
