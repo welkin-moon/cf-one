@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const rootDirectory = path.resolve(scriptDirectory, '..');
 const webDirectory = path.join(rootDirectory, 'apps/web');
+const VERSION = '4.0.0';
 
 function runWrangler(arguments_) {
   return new Promise((resolve, reject) => {
@@ -20,8 +21,7 @@ function runWrangler(arguments_) {
   });
 }
 
-// Keep the production bundle flat: the legacy v3.1-v3.7 runtime chain is executed only here at
-// build time to snapshot the already-rendered pages. current-runtime.js itself imports no legacy code.
+// Generate the flat v4 page snapshot before bundling. Production imports no v3 questionnaire chain.
 await import('./generate-mf01sm-current.mjs');
 
 const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
@@ -29,7 +29,6 @@ const token = process.env.CLOUDFLARE_API_TOKEN?.trim();
 if (!accountId || !/^[a-f0-9]{32}$/i.test(accountId) || !token) {
   throw new Error('Cloudflare build credentials are unavailable.');
 }
-
 const apiRoot = 'https://api.cloudflare.com/client/v4';
 
 async function api(endpoint, init = {}) {
@@ -70,56 +69,26 @@ async function findJavaScript(directory) {
     }
   }
   await walk(directory);
-  if (found.length !== 1) {
-    throw new Error(`Expected one bundled JavaScript module from mf01sm dry-run, found ${found.length}: ${found.join(', ')}`);
-  }
+  if (found.length !== 1) throw new Error(`Expected one bundled JavaScript module from mf01sm dry-run, found ${found.length}: ${found.join(', ')}`);
   return found[0];
 }
 
 const outDirectory = await mkdtemp(path.join(os.tmpdir(), 'mf01sm-runtime-'));
 try {
-  await runWrangler([
-    'deploy',
-    '--dry-run',
-    '--cwd', '../mf01sm',
-    '--config', 'wrangler.toml',
-    '--name', 'mf01sm',
-    '--outdir', outDirectory
-  ]);
-
+  await runWrangler(['deploy','--dry-run','--cwd','../mf01sm','--config','wrangler.toml','--name','mf01sm','--outdir',outDirectory]);
   const bundlePath = await findJavaScript(outDirectory);
   const source = await readFile(bundlePath, 'utf8');
-  // Only use ASCII semantic/literal markers that survive esbuild. Identifier names can be folded,
-  // and non-ASCII UI strings can be escaped. Page text/age labels are verified before bundling by
-  // generate-mf01sm-current.mjs and the rendered-page regressions.
   const requiredMarkers = [
-    '3.8.2',
-    'assigned-sex-v3.7-balanced-sm-fantasy',
-    'mixed-v37-sm-fantasy',
-    'gender_style_masc',
-    'gender_style_fem',
-    'initiative01',
-    'dominance',
-    's_like',
-    'm_like',
-    'mf01sm-v38-age-gate',
-    'mf01sm-v382-v1-roast-tags',
-    'q.reverse?6-raw:raw',
-    'sexual_attraction_direction',
-    'gender_identity_special',
-    'run_thresholds',
-    'response_quality_detail',
-    'CF-Connecting-IP',
-    'payload too large',
-    'scores too large',
-    'KV Legacy/Fallback'
+    '4.0.0','mf01sm-v4-independent-leaf','mixed-v4-stable-reuse','mf01sm-v4-leaf-history',
+    'mf01sm-v4-record-1','MF01SM4:','window.mf01smV4History','gender_style_masc','gender_style_fem',
+    'aesthetic','role0','role1','s_like','m_like','attr_m','attr_f','sexual_expression','romantic_tendency',
+    'mono','poly','nonbinary_identity','response_quality_detail','CF-Connecting-IP','payload too large',
+    'scores too large','KV Legacy/Fallback','里百合 / 药娘预备役 / 软糯伪娘','爹系狂攻 / 强制爱暴君 / 掌控狂'
   ];
   const missingMarkers = requiredMarkers.filter(marker => !source.includes(marker));
-  if (missingMarkers.length) {
-    throw new Error(`mf01sm runtime bundle is missing stable v3.8.2 integrity markers: ${missingMarkers.join(', ')}; refusing to deploy.`);
-  }
-  if (source.includes('mf01sm-v37-age-gate') || /n\s*<\s*16|age\s*<\s*16|n\s*>\s*90|age\s*>\s*90/.test(source)) {
-    throw new Error('mf01sm v3.8.2 bundle still contains an active legacy 16/90 age gate; refusing to deploy.');
+  if (missingMarkers.length) throw new Error(`mf01sm runtime bundle is missing stable v4 integrity markers: ${missingMarkers.join(', ')}; refusing to deploy.`);
+  if (source.includes('mf01sm-v382-v1-roast-tags') || source.includes('assigned-sex-v3.7-balanced-sm-fantasy')) {
+    throw new Error('mf01sm v4 bundle still contains the v3.8/v3.7 current measurement snapshot; refusing to deploy.');
   }
 
   const scriptName = 'mf01sm';
@@ -129,33 +98,28 @@ try {
     throw new Error('mf01sm historical bindings are incomplete; refusing to deploy runtime bundle.');
   }
 
+  const message = 'mf01sm v4.0.0 independent leaf scoring, complete stats, blurred flag, and v4.x answer migration';
   const metadata = {
     main_module: 'worker.js',
     compatibility_date: settings?.compatibility_date || '2026-05-07',
     compatibility_flags: settings?.compatibility_flags || [],
     bindings: bindingNames.map(name => ({ type: 'inherit', name, version_id: 'latest' })),
     annotations: {
-      'workers/tag': `mf01sm-v3.8.2-${Date.now().toString(36)}`,
-      'workers/message': 'mf01sm v3.8.2 locked v1-style tags and polished roast analysis'
+      'workers/tag': `mf01sm-v${VERSION}-${Date.now().toString(36)}`,
+      'workers/message': message
     }
   };
-
   const form = new FormData();
   form.set('metadata', JSON.stringify(metadata));
   form.set('worker.js', new Blob([source], { type: 'application/javascript+module' }), 'worker.js');
   const version = await apiForm(`/accounts/${accountId}/workers/scripts/${scriptName}/versions?bindings_inherit=strict`, form);
   if (!version?.id) throw new Error('Cloudflare uploaded mf01sm runtime but returned no version id.');
-
   const deployment = await api(`/accounts/${accountId}/workers/scripts/${scriptName}/deployments`, {
     method: 'POST',
-    body: JSON.stringify({
-      strategy: 'percentage',
-      versions: [{ percentage: 100, version_id: version.id }],
-      annotations: { 'workers/message': 'mf01sm v3.8.2 locked v1-style tags and polished roast analysis' }
-    })
+    body: JSON.stringify({strategy:'percentage',versions:[{percentage:100,version_id:version.id}],annotations:{'workers/message':message}})
   });
   if (!deployment?.id) throw new Error('Cloudflare created no mf01sm runtime deployment id.');
-  console.log(`mf01sm v3.8.2 runtime ${version.id} deployed at 100%; questionnaire content is unchanged, result tags use the locked v1-style layer, and the result page includes polished two-part roast analysis.`);
+  console.log(`mf01sm v${VERSION} runtime ${version.id} deployed at 100%; independent leaf scoring and v4.x stable-answer migration are live.`);
 } finally {
   await rm(outDirectory, { recursive: true, force: true });
 }

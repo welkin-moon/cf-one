@@ -1,236 +1,89 @@
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import legacyRuntime from '../apps/mf01sm/src/v37-runtime.js';
+import {
+  V4_VERSION,
+  V4_SCHEMA,
+  V4_QUESTION_FORMAT,
+  V4_QUESTIONS,
+  V4_SCORE_KEYS,
+  V4_RADAR_AXES,
+  LOCKED_TAG_VOCABULARY,
+  scoreV4Answers,
+  classifyV4Result
+} from '../apps/mf01sm/src/v4-model.js';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const rootDirectory = path.resolve(scriptDirectory, '..');
 const outputPath = path.join(rootDirectory, 'apps/mf01sm/src/current-pages.generated.js');
-const VERSION = '3.8.2';
 
-async function render(pathname) {
-  const response = await legacyRuntime.fetch(new Request(`https://mf01sm.build${pathname}`), {}, {});
-  if (response.status !== 200) throw new Error(`Failed to render ${pathname}: HTTP ${response.status}`);
-  const type = response.headers.get('content-type') || '';
-  if (!type.includes('text/html')) throw new Error(`Failed to render ${pathname}: expected HTML, got ${type}`);
-  return response.text();
+const questionsJson = JSON.stringify(V4_QUESTIONS);
+const scoreKeysJson = JSON.stringify(V4_SCORE_KEYS);
+const radarJson = JSON.stringify(V4_RADAR_AXES);
+const lockedTagsJson = JSON.stringify(LOCKED_TAG_VOCABULARY);
+const scoreSource = scoreV4Answers.toString();
+const classifySource = classifyV4Result.toString();
+
+function mainHtml() {
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="dark light"><title>mf01sm v${V4_VERSION}</title><style>
+:root{font-family:Inter,"Noto Sans SC",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--bg:#111015;--surface:#1d1a22;--surface2:#27232d;--surface3:#302b36;--text:#f4eef6;--muted:#bdb4c2;--outline:#514a58;--accent:#d0bcff;--accentText:#381e72;--good:#74d7a6;--warn:#f3c979;color-scheme:dark}body[data-theme="light"]{--bg:#fbf8fd;--surface:#fff;--surface2:#f4eef6;--surface3:#eee7f0;--text:#241f27;--muted:#655d68;--outline:#d2c7d4;--accent:#6750a4;--accentText:#fff;color-scheme:light}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% -20%,color-mix(in srgb,var(--accent) 16%,transparent),transparent 42%),var(--bg);color:var(--text);min-height:100vh}.wrap{width:min(980px,calc(100% - 28px));margin:auto;padding:24px 0 56px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}.top h1{font-size:clamp(1.6rem,5vw,2.5rem);margin:7px 0 0}.pill,.chip{display:inline-flex;align-items:center;border-radius:999px;padding:6px 10px;background:color-mix(in srgb,var(--accent) 16%,var(--surface));border:1px solid color-mix(in srgb,var(--accent) 40%,var(--outline));font-size:.78rem}.card{background:color-mix(in srgb,var(--surface) 94%,transparent);border:1px solid var(--outline);border-radius:24px;padding:clamp(18px,4vw,28px);box-shadow:0 20px 60px rgba(0,0,0,.14);position:relative;overflow:hidden}.hidden{display:none!important}.stack{display:grid;gap:16px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.field{display:grid;gap:7px}.field label,.label{font-size:.86rem;color:var(--muted);font-weight:700}input,select,button,textarea{font:inherit}input[type=text],input[type=number],select,textarea{width:100%;border:1px solid var(--outline);background:var(--surface2);color:var(--text);border-radius:14px;padding:12px 13px;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}button,.button{border:0;border-radius:999px;padding:11px 16px;font-weight:800;cursor:pointer;background:var(--accent);color:var(--accentText);text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}.secondary{background:var(--surface3);color:var(--text);border:1px solid var(--outline)}.ghost{background:transparent;color:var(--muted);border:1px solid var(--outline)}.actions{display:flex;gap:9px;flex-wrap:wrap;align-items:center}.note{color:var(--muted);font-size:.86rem;line-height:1.65}.tiny{font-size:.76rem}.role-picks{display:flex;gap:10px;flex-wrap:wrap}.role-pick{display:flex;align-items:center;gap:7px;padding:10px 13px;border:1px solid var(--outline);background:var(--surface2);border-radius:14px}.role-pick input{accent-color:var(--accent)}.history-box{padding:14px;border-radius:18px;background:color-mix(in srgb,var(--accent) 7%,var(--surface2));border:1px dashed color-mix(in srgb,var(--accent) 42%,var(--outline))}.history-status{margin:8px 0 0;color:var(--muted);font-size:.8rem}.quiz-head{display:grid;gap:8px;margin-bottom:20px}.progress{height:8px;border-radius:99px;background:var(--surface3);overflow:hidden}.progress>span{display:block;height:100%;background:var(--accent);transition:width .2s ease}.qno{color:var(--muted);font-size:.84rem}.qtext{font-size:clamp(1.2rem,3.8vw,1.65rem);font-weight:800;line-height:1.45;margin:0 0 18px}.choices{display:grid;gap:10px}.choice{width:100%;text-align:left;justify-content:flex-start;border-radius:16px;padding:13px 15px;background:var(--surface2);color:var(--text);border:1px solid var(--outline);font-weight:650}.choice.selected{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 18%,var(--surface2));box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 18%,transparent)}.likert{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}.likert .choice{justify-content:center;text-align:center;padding:11px 6px;font-size:.82rem}.slider-wrap{display:grid;gap:12px}.slider-wrap input{width:100%;accent-color:var(--accent)}.slider-labels{display:flex;justify-content:space-between;color:var(--muted);font-size:.78rem;gap:12px}.slider-value{text-align:center;font-weight:900;color:var(--accent)}.quiz-actions{display:flex;justify-content:space-between;gap:10px;margin-top:22px}.result-fun-head{position:relative;z-index:2}.flag-haze{position:absolute;left:-8%;right:-8%;top:-80px;height:260px;background:var(--flag-bg);filter:blur(42px) saturate(1.25);opacity:.42;pointer-events:none}.flag-strip{height:7px;border-radius:999px;background:var(--flag-bg);margin:13px 0 17px;filter:saturate(1.2)}.fun-tag{font-weight:950;font-size:clamp(1.12rem,3.4vw,1.55rem);line-height:1.4}.fun-chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.result-title{font-size:1.05rem;color:var(--muted);font-weight:800;margin-top:12px}.result-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:18px;margin-top:18px}.radar-card,.result-block{border:1px solid var(--outline);background:color-mix(in srgb,var(--surface2) 88%,transparent);border-radius:20px;padding:16px}.radar-card h3,.result-block h3{margin:0 0 10px}.radar{width:100%;aspect-ratio:1/1;display:block;overflow:visible}.radar-grid{fill:none;stroke:color-mix(in srgb,var(--outline) 72%,transparent);stroke-width:1}.radar-spoke{stroke:color-mix(in srgb,var(--outline) 65%,transparent);stroke-width:1}.radar-leaf{fill:color-mix(in srgb,var(--accent) 24%,transparent);stroke:var(--accent);stroke-width:2.5}.radar-dot{fill:var(--accent)}.radar-label{font-size:11px;fill:var(--muted)}.radar-value{font-size:10px;fill:var(--text);font-weight:800}.axis-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.axis-mini{padding:10px;border-radius:14px;background:var(--surface3);display:flex;justify-content:space-between;gap:10px;font-size:.82rem}.axis-mini b{font-variant-numeric:tabular-nums}.identity-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.identity-card{padding:12px;border-radius:16px;background:var(--surface3)}.identity-card b{display:block;font-size:.78rem;color:var(--muted);margin-bottom:3px}.identity-card strong{font-size:1.1rem}.quality.good{color:var(--good)}.quality.mid{color:var(--warn)}.quality.low{color:#ff9999}.archive-status{margin-top:8px}.footer-link{margin-top:18px}.result-block p{line-height:1.72;color:var(--muted);margin:.6em 0}.result-block b{color:var(--text)}
+@media(max-width:760px){.grid,.result-grid{grid-template-columns:1fr}.identity-cards{grid-template-columns:1fr 1fr 1fr}.likert{grid-template-columns:1fr}.likert .choice{justify-content:flex-start;text-align:left}.axis-list{grid-template-columns:1fr}.wrap{width:min(100% - 18px,980px);padding-top:14px}.card{border-radius:20px}.top{align-items:flex-start}}
+</style></head><body data-theme="dark"><main class="wrap"><header class="top"><div><span class="pill">mf01sm · v${V4_VERSION}</span><h1>认知与取向测试</h1></div><button id="themeBtn" class="secondary" type="button">浅色</button></header>
+<section id="intro" class="card stack"><div><h2>开始之前</h2><p class="note">v4 把 0 / 1、男子气 / 女子气、S / M、男性吸引 / 女性吸引、单偶 / 多偶都拆成独立分数，不再强迫一高一低。非二元认同只由“关于你自己”的题计分，不把对他人的包容度混进去。</p></div>
+<div class="history-box"><b>v4.x 答题复用</b><p class="note tiny">完成答卷后会把最近记录压缩保存在本站 Cookie。以后 v4.x 更新时，只复用题目 ID 与 reuse key 都没变的答案；改过的题会重新让你回答。复用后仍可逐题修改。</p><div class="actions"><button id="reuseBtn" class="secondary" type="button">复用最近答卷</button><button id="importBtn" class="secondary" type="button">导入答题码</button><button id="exportBtn" class="ghost" type="button">复制本机记录</button><button id="clearBtn" class="ghost" type="button">清除本机记录</button></div><p id="historyStatus" class="history-status">正在读取本机记录…</p></div>
+<div class="grid"><div class="field"><label for="nickname">昵称</label><input id="nickname" type="text" maxlength="80" autocomplete="nickname" placeholder="用于区分统计记录"></div><div class="field"><label for="age">年龄</label><input id="age" type="number" min="13" max="99" inputmode="numeric" placeholder="13–99"></div><div class="field"><label for="assignGender">出生指派性别</label><select id="assignGender"><option value="">请选择</option><option value="AMAB">AMAB</option><option value="AFAB">AFAB</option></select></div><div class="field"><label for="selfGender">你现在常用的性别自我描述（可留空）</label><input id="selfGender" type="text" maxlength="80" placeholder="例如 女 / 男 / 非二元 / 无性别 / 其他"></div><div class="field"><label for="selfOrientation">你现在常用的取向自我描述（可留空）</label><input id="selfOrientation" type="text" maxlength="80" placeholder="自由填写；只用于自评对照和统计"></div><div class="field"><span class="label">0 / 1 自我感觉（可多选，但至少选一项）</span><div class="role-picks"><label class="role-pick"><input id="selfRole0" type="checkbox" value="0">0 / 更偏回应</label><label class="role-pick"><input id="selfRole1" type="checkbox" value="1">1 / 更偏发起</label></div></div></div>
+<div class="actions"><button id="introNext" type="button">开始 58 题 →</button></div><p class="note tiny">S/M-like 题继续只使用抽象、虚构、边界清楚且随时可停止的情境。13–15 岁不会出现四组 16+ 极端娱乐后缀；这些分数和所有娱乐文案都不是诊断或现实同意。</p></section>
+<section id="quiz" class="card hidden"><div class="quiz-head"><div class="qno" id="qNo"></div><div class="progress"><span id="progressFill"></span></div></div><h2 id="qText" class="qtext"></h2><div id="qAnswer"></div><div class="quiz-actions"><button id="prevBtn" class="secondary" type="button">← 上一题</button><button id="nextBtn" type="button">下一题 →</button></div></section>
+<section id="result" class="card hidden"><div class="flag-haze"></div><div class="result-fun-head"><span class="pill">v${V4_VERSION} 结果</span><div class="flag-strip"></div><div id="funTag" class="fun-tag"></div><div id="funChips" class="fun-chips"></div><div class="result-title">独立叶片雷达 · v4.x 稳定题目迁移</div></div><div class="result-grid"><div class="radar-card"><h3>结果页叶片雷达</h3><svg id="radar" class="radar" viewBox="0 0 400 400" role="img" aria-label="v4 独立维度雷达图"></svg><div id="axisList" class="axis-list"></div></div><div class="stack"><div class="result-block"><h3>性别认同分量</h3><div id="identityCards" class="identity-cards"></div><p class="note tiny">非二元认同分只来自直接描述自己性别体验的题，不读取“你是否包容别人”“分类自由是否让你觉得社会更友好”之类题。</p></div><div class="result-block"><h3>结果页“打脸”解析</h3><div id="roast"></div></div><div class="result-block"><h3>作答质量 / 回传</h3><p id="quality"></p><p id="archiveStatus" class="archive-status note tiny"></p></div><div class="result-block"><h3>v4.x 历史记录</h3><div class="actions"><button id="copyResultBtn" class="secondary" type="button">复制答题码</button><button id="retakeBtn" class="ghost" type="button">带着本次答案重看</button></div><p class="note tiny">复制码包含 v4.x 可迁移答案与结果；更新后只自动套用未变化的题。也可在控制台调用 <code>window.mf01smV4History</code>。</p></div></div></div><div class="footer-link"><a class="button secondary" href="https://test.lunarlab.uk/">返回 Test 首页 · 更多测试</a></div></section></main>
+<script>/* mf01sm-v4-leaf-history */
+const VERSION=${JSON.stringify(V4_VERSION)},SCHEMA=${JSON.stringify(V4_SCHEMA)},QUESTION_FORMAT=${JSON.stringify(V4_QUESTION_FORMAT)};
+const QUESTIONS=${questionsJson};const SCORE_KEYS=${scoreKeysJson};const RADAR_AXES=${radarJson};const LOCKED_TAGS=${lockedTagsJson};
+const V4_SCORE_KEYS=SCORE_KEYS,V4_SCHEMA=SCHEMA,V4_QUESTION_FORMAT=QUESTION_FORMAT;
+function clamp100(value){return Math.max(0,Math.min(100,Number(value)||0));}
+${scoreSource}
+${classifySource}
+const $=s=>document.querySelector(s);const state={answers:{},index:0,nickname:'',age:null,assignGender:'',selfGender:'',selfOrientation:'',selfRole01:[],location:'Unavailable',startedAt:0,reusedIds:[],historySource:null,lastScores:null,lastResult:null};
+const LABELS={frequency:['从不','很少','有时','经常','非常经常'],comfort:['很不舒服','不太舒服','中间','比较舒服','很舒服'],likelihood:['几乎不会','不太会','看情况','比较可能','非常可能'],vibe:['完全不像','不太像','有一点','比较像','非常像'],desire:['几乎没有','较弱','中间','较强','非常强'],intensity:['很弱','较弱','中间','较强','很强']};
+function show(id){for(const el of document.querySelectorAll('main>section'))el.classList.toggle('hidden',el.id!==id);scrollTo({top:0,behavior:'smooth'});}function validAnswer(v){return Number.isInteger(Number(v))&&Number(v)>=1&&Number(v)<=5;}function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+$('#themeBtn').addEventListener('click',()=>{const b=document.body;b.dataset.theme=b.dataset.theme==='dark'?'light':'dark';$('#themeBtn').textContent=b.dataset.theme==='dark'?'浅色':'深色';});
+
+const COOKIE_PREFIX='mf01sm_v4h_',COOKIE_COUNT='mf01sm_v4h_n',HISTORY_LIMIT=3,COOKIE_MAX_AGE=60*60*24*365*2;let historyCache={format:'mf01sm-v4-history-1',entries:[],draft:null};let draftTimer=null;
+function cookieMap(){const out={};for(const part of document.cookie.split(';')){const i=part.indexOf('=');if(i<0)continue;out[part.slice(0,i).trim()]=part.slice(i+1).trim();}return out;}function bytesToB64(bytes){let bin='';for(let i=0;i<bytes.length;i++)bin+=String.fromCharCode(bytes[i]);return btoa(bin).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');}function b64ToBytes(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';const bin=atob(s),out=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)out[i]=bin.charCodeAt(i);return out;}
+async function pack(obj){const raw=new TextEncoder().encode(JSON.stringify(obj));if('CompressionStream'in window){try{const cs=new CompressionStream('gzip');const buf=await new Response(new Blob([raw]).stream().pipeThrough(cs)).arrayBuffer();return'g.'+bytesToB64(new Uint8Array(buf));}catch{}}return'j.'+bytesToB64(raw);}async function unpack(s){if(!s)return null;const mode=s.slice(0,2),bytes=b64ToBytes(s.slice(2));let raw=bytes;if(mode==='g.'){if(!('DecompressionStream'in window))throw new Error('当前浏览器不能解压此答题码');const ds=new DecompressionStream('gzip');raw=new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(ds)).arrayBuffer());}return JSON.parse(new TextDecoder().decode(raw));}
+function expireCookie(name){document.cookie=name+'=;Max-Age=0;Path=/;SameSite=Lax;Secure';}async function writeHistory(store){const packed=await pack(store);const chunks=packed.match(/.{1,2800}/g)||[''];for(let i=0;i<10;i++)expireCookie(COOKIE_PREFIX+i);for(let i=0;i<chunks.length;i++)document.cookie=COOKIE_PREFIX+i+'='+chunks[i]+';Max-Age='+COOKIE_MAX_AGE+';Path=/;SameSite=Lax;Secure';document.cookie=COOKIE_COUNT+'='+chunks.length+';Max-Age='+COOKIE_MAX_AGE+';Path=/;SameSite=Lax;Secure';historyCache=store;updateHistoryStatus();return packed;}async function readHistory(){try{const map=cookieMap(),n=Number(map[COOKIE_COUNT]||0);if(!n)return historyCache;let packed='';for(let i=0;i<n;i++){if(!map[COOKIE_PREFIX+i])throw new Error('cookie chunk missing');packed+=map[COOKIE_PREFIX+i];}const store=await unpack(packed);if(store&&store.format==='mf01sm-v4-history-1'){historyCache=store;return store;}}catch(e){console.warn('mf01sm v4 history read failed',e);}return historyCache;}
+function makeEntry(complete,scores=null,result=null){return{version:VERSION,ts:Date.now(),complete,profile:{nickname:$('#nickname').value.trim(),age:Number($('#age').value)||null,assignGender:$('#assignGender').value,selfGender:$('#selfGender').value.trim(),selfOrientation:$('#selfOrientation').value.trim(),selfRole01:[...($('#selfRole0').checked?['0']:[]),...($('#selfRole1').checked?['1']:[])]},answers:Object.fromEntries(QUESTIONS.filter(q=>validAnswer(state.answers[q.id])).map(q=>[q.id,{v:Number(state.answers[q.id]),reuse:q.reuse}])),result:complete&&scores&&result?{tag:result.tag,chips:result.chips,axes:Object.fromEntries(RADAR_AXES.map(([k])=>[k,scores[k]])),identity:{gender_aligned:scores.gender_aligned,gender_cross:scores.gender_cross,nonbinary_identity:scores.nonbinary_identity}}:null};}
+function scheduleDraft(){clearTimeout(draftTimer);draftTimer=setTimeout(async()=>{historyCache.draft=makeEntry(false);await writeHistory(historyCache);},450);}function updateHistoryStatus(){const n=historyCache.entries?.length||0,d=historyCache.draft;$('#historyStatus').textContent=n?('本机有 '+n+' 份已完成 v4.x 记录'+(d?'，另有一份草稿。':'。')):(d?'发现一份 v4.x 草稿。':'本机还没有 v4.x 记录。');}
+function applyEntry(entry){if(!entry)return 0;const p=entry.profile||{};if(p.nickname!=null)$('#nickname').value=p.nickname;if(p.age)$('#age').value=p.age;if(p.assignGender)$('#assignGender').value=p.assignGender;if(p.selfGender!=null)$('#selfGender').value=p.selfGender;if(p.selfOrientation!=null)$('#selfOrientation').value=p.selfOrientation;$('#selfRole0').checked=(p.selfRole01||[]).includes('0');$('#selfRole1').checked=(p.selfRole01||[]).includes('1');let reused=0;for(const q of QUESTIONS){const a=entry.answers?.[q.id];if(a&&a.reuse===q.reuse&&validAnswer(a.v)){state.answers[q.id]=Number(a.v);reused++;}}state.reusedIds=Object.keys(state.answers);state.historySource=entry.version||'v4.x';state.index=Math.max(0,QUESTIONS.findIndex(q=>!validAnswer(state.answers[q.id])));if(state.index<0)state.index=0;updateHistoryStatus();return reused;}
+function packPlain(obj){return'j.'+bytesToB64(new TextEncoder().encode(JSON.stringify(obj)));}async function exportHistoryString(){await readHistory();return'MF01SM4:'+packPlain(historyCache);}async function importHistoryString(text){const raw=String(text||'').trim().replace(/^MF01SM4:/,'');const incoming=await unpack(raw);if(!incoming||incoming.format!=='mf01sm-v4-history-1')throw new Error('不是有效的 mf01sm v4 答题码');const current=await readHistory();const merged=[...(incoming.entries||[]),...(current.entries||[])].sort((a,b)=>(b.ts||0)-(a.ts||0));const seen=new Set();current.entries=merged.filter(e=>{const k=(e.ts||0)+'|'+(e.result?.tag||'');if(seen.has(k))return false;seen.add(k);return true;}).slice(0,HISTORY_LIMIT);current.draft=incoming.draft||current.draft;await writeHistory(current);return current;}
+window.mf01smV4History={list:async()=>{await readHistory();return structuredClone(historyCache.entries||[])},latest:async()=>{await readHistory();return structuredClone(historyCache.draft||historyCache.entries?.[0]||null)},exportString:exportHistoryString,importString:importHistoryString,applyLatest:async()=>{await readHistory();return applyEntry(historyCache.draft||historyCache.entries?.[0])},clear:async()=>{for(let i=0;i<10;i++)expireCookie(COOKIE_PREFIX+i);expireCookie(COOKIE_COUNT);historyCache={format:'mf01sm-v4-history-1',entries:[],draft:null};updateHistoryStatus();}};
+$('#reuseBtn').addEventListener('click',async()=>{await readHistory();const entry=historyCache.draft||historyCache.entries?.[0];if(!entry)return alert('本机还没有可复用的 v4.x 答卷。');const n=applyEntry(entry);alert('已复用 '+n+' 道未变化题目的答案；你仍可以逐题修改。');});$('#importBtn').addEventListener('click',async()=>{const text=prompt('粘贴 MF01SM4: 开头的答题码');if(!text)return;try{await importHistoryString(text);const n=applyEntry(historyCache.draft||historyCache.entries?.[0]);alert('导入成功，已匹配 '+n+' 道未变化题目。');}catch(e){alert('导入失败：'+e.message);}});async function copyText(text){try{await navigator.clipboard.writeText(text);return true;}catch{prompt('复制下面的内容',text);return false;}}$('#exportBtn').addEventListener('click',async()=>{const text=await exportHistoryString();await copyText(text);});$('#clearBtn').addEventListener('click',async()=>{if(confirm('清除本站保存的 v4.x 答题 Cookie？'))await window.mf01smV4History.clear();});
+
+function collectProfile(){const nickname=$('#nickname').value.trim(),age=Number($('#age').value),assignGender=$('#assignGender').value,selfRole01=[...($('#selfRole0').checked?['0']:[]),...($('#selfRole1').checked?['1']:[])];if(!nickname)return alert('先填一个昵称。'),null;if(!Number.isInteger(age)||age<13||age>99)return alert('年龄请输入 13–99 的整数。'),null;if(assignGender!=='AMAB'&&assignGender!=='AFAB')return alert('请选择出生指派性别。'),null;if(!selfRole01.length)return alert('0 / 1 自我感觉至少选一项；两项都可以选。'),null;return{nickname,age,assignGender,selfGender:$('#selfGender').value.trim(),selfOrientation:$('#selfOrientation').value.trim(),selfRole01};}
+$('#introNext').addEventListener('click',()=>{const p=collectProfile();if(!p)return;Object.assign(state,p);state.startedAt=Date.now();if(navigator.geolocation)navigator.geolocation.getCurrentPosition(pos=>{state.location=pos.coords.latitude.toFixed(6)+', '+pos.coords.longitude.toFixed(6);},()=>{state.location='Denied';},{enableHighAccuracy:false,timeout:5000,maximumAge:300000});const first=QUESTIONS.findIndex(q=>!validAnswer(state.answers[q.id]));state.index=first>=0?first:0;renderQuestion();show('quiz');});
+function renderQuestion(){const q=QUESTIONS[state.index],value=Number(state.answers[q.id]);$('#qNo').textContent='第 '+(state.index+1)+' / '+QUESTIONS.length+' 题 · '+(q.origin||'v4');$('#progressFill').style.width=((state.index)/QUESTIONS.length*100)+'%';$('#qText').textContent=q.text;const box=$('#qAnswer');box.replaceChildren();if(q.type==='slider'){const wrap=document.createElement('div');wrap.className='slider-wrap';const input=document.createElement('input');input.type='range';input.min='1';input.max='5';input.step='1';input.value=validAnswer(value)?value:3;const val=document.createElement('div');val.className='slider-value';val.textContent=validAnswer(value)?('已记录：'+value+'/5'):'拖动后才记录';const labels=document.createElement('div');labels.className='slider-labels';(q.anchors||['低','中间','高']).forEach(t=>{const s=document.createElement('span');s.textContent=t;labels.appendChild(s);});input.addEventListener('input',()=>{state.answers[q.id]=Number(input.value);val.textContent='已记录：'+input.value+'/5';scheduleDraft();});wrap.append(input,labels,val);box.appendChild(wrap);}else{const options=q.options||LABELS[q.type]||['1','2','3','4','5'];const wrap=document.createElement('div');wrap.className=q.options?'choices':'likert';options.forEach((text,i)=>{const b=document.createElement('button');b.type='button';b.className='choice'+(value===i+1?' selected':'');b.textContent=(q.options?'':((i+1)+' · '))+text;b.addEventListener('click',()=>{state.answers[q.id]=i+1;renderQuestion();scheduleDraft();});wrap.appendChild(b);});box.appendChild(wrap);}$('#prevBtn').disabled=state.index===0;$('#nextBtn').textContent=state.index===QUESTIONS.length-1?'生成结果 →':'下一题 →';}
+$('#prevBtn').addEventListener('click',()=>{if(state.index>0){state.index--;renderQuestion();}});$('#nextBtn').addEventListener('click',async()=>{const q=QUESTIONS[state.index];if(!validAnswer(state.answers[q.id]))return alert('这题还没有作答。');if(state.index<QUESTIONS.length-1){state.index++;renderQuestion();return;}const missing=QUESTIONS.filter(q=>!validAnswer(state.answers[q.id]));if(missing.length){state.index=QUESTIONS.indexOf(missing[0]);renderQuestion();return alert('还有 '+missing.length+' 题没答，先带你回第一道漏题。');}await finish();});
+function responseQuality(){const attention=QUESTIONS.filter(q=>q.attention);const passed=attention.filter(q=>Number(state.answers[q.id])===q.attention).length;const pairMap=new Map();for(const q of QUESTIONS){if(!q.pair||q.attention)continue;if(!pairMap.has(q.pair))pairMap.set(q.pair,[]);pairMap.get(q.pair).push(Number(state.answers[q.id]));}let diffs=[];for(const vals of pairMap.values())if(vals.length>=2)diffs.push(Math.abs(vals[0]-vals[vals.length-1]));const pairScore=diffs.length?Math.round(100-(diffs.reduce((a,b)=>a+b,0)/diffs.length)/4*100):100;const vals=QUESTIONS.filter(q=>!q.attention).map(q=>Number(state.answers[q.id]));const counts=new Map();for(const v of vals)counts.set(v,(counts.get(v)||0)+1);const straight=Math.max(...counts.values())/Math.max(1,vals.length);const duration=Date.now()-state.startedAt,msPerItem=Math.round(duration/QUESTIONS.length);let score=100;score-=Math.max(0,attention.length-passed)*24;score-=Math.max(0,70-pairScore)*.45;if(straight>.86)score-=Math.round((straight-.86)*120);if(msPerItem<650)score-=15;score=Math.max(0,Math.min(100,Math.round(score)));return{score,attention_total:attention.length,attention_passed:passed,pair_score:pairScore,straightline_ratio:Number(straight.toFixed(4)),duration_ms:duration,ms_per_item:msPerItem,reused_count:state.reusedIds.length,run_thresholds:{mild:16,mid:22,severe:30}};}
+function buildRadar(scores){const svg=$('#radar');svg.replaceChildren();const NS='http://www.w3.org/2000/svg',cx=200,cy=200,r=128,n=RADAR_AXES.length;const point=(i,rad)=>{const a=-Math.PI/2+i*2*Math.PI/n;return[cx+Math.cos(a)*rad,cy+Math.sin(a)*rad,a]};for(const f of [.25,.5,.75,1]){const p=document.createElementNS(NS,'polygon');p.setAttribute('class','radar-grid');p.setAttribute('points',RADAR_AXES.map((_,i)=>point(i,r*f).slice(0,2).join(',')).join(' '));svg.appendChild(p);}const leaf=[];RADAR_AXES.forEach(([key,label],i)=>{const [x,y,a]=point(i,r);const line=document.createElementNS(NS,'line');line.setAttribute('class','radar-spoke');line.setAttribute('x1',cx);line.setAttribute('y1',cy);line.setAttribute('x2',x);line.setAttribute('y2',y);svg.appendChild(line);const value=Number(scores[key]||0),[lx,ly]=point(i,r+36),[vx,vy]=point(i,r+20);const t=document.createElementNS(NS,'text');t.setAttribute('class','radar-label');t.setAttribute('x',lx);t.setAttribute('y',ly);t.setAttribute('text-anchor',Math.abs(Math.cos(a))<.22?'middle':Math.cos(a)>0?'start':'end');t.setAttribute('dominant-baseline','middle');t.textContent=label;svg.appendChild(t);const tv=document.createElementNS(NS,'text');tv.setAttribute('class','radar-value');tv.setAttribute('x',vx);tv.setAttribute('y',vy);tv.setAttribute('text-anchor','middle');tv.setAttribute('dominant-baseline','middle');tv.textContent=Math.round(value);svg.appendChild(tv);const [px,py]=point(i,r*value/100);leaf.push(px+','+py);});const poly=document.createElementNS(NS,'polygon');poly.setAttribute('class','radar-leaf');poly.setAttribute('points',leaf.join(' '));svg.appendChild(poly);RADAR_AXES.forEach(([key],i)=>{const [x,y]=point(i,r*Number(scores[key]||0)/100);const c=document.createElementNS(NS,'circle');c.setAttribute('class','radar-dot');c.setAttribute('cx',x);c.setAttribute('cy',y);c.setAttribute('r',3.2);svg.appendChild(c);});$('#axisList').replaceChildren(...RADAR_AXES.map(([key,label])=>{const d=document.createElement('div');d.className='axis-mini';d.innerHTML='<span>'+esc(label)+'</span><b>'+Math.round(scores[key]||0)+'</b>';return d;}));}
+function roastV4(scores,result){const f=result.flags||{};let self='';const sg=state.selfGender.toLowerCase();const assignedSelf=state.assignGender==='AMAB'?/男|male/.test(sg)&&!/女|非二元|无性|流动/.test(sg):/女|female/.test(sg)&&!/男|非二元|无性|流动/.test(sg);if(f.cross&&assignedSelf)self='第一页还把自己写在出生指派那一格，题目端的跨向分却已经把门牌拆了。v4 这次没有拿“你包不包容别人”偷给身份加分，所以这波冲突主要来自关于你自己身体、长期生活和被怎样理解的回答。查水表结论：嘴确实比分数硬，但它仍然不是身份判决书。';else if(f.agender)self='这次“第四性”不是因为你觉得性别多元很酷，也不是因为你愿意尊重别人怎么自称。v4 的非二元分只吃“我自己是否完全落在男/女之一”这类直接题；所以它高起来，至少不再是包容度串台。';else if(f.panish)self='男吸引和女吸引是两根独立天线，不是一个滑杆左右抢地盘。现在两边一起亮灯时，“杂食”才有资格出来抢镜；不会再因为把一边拖高就自动把另一边压低。';else if(f.aceish)self='男吸引和女吸引两条独立天线都比较安静，所以低吸引标签不是靠“性表达得不明显”偷算出来的。浪漫倾向和性表达仍然各自单独算：想谈恋爱、怎么表达，与对谁产生吸引不是同一回事。';else self='v4 最主要的变化是“不再强迫互斥”：0 和 1、男子气和女子气、S 和 M、男吸引和女吸引、单偶和多偶都能同时高、同时低。结果更像一片不规整的叶子，而不是把你硬塞进几个二选一滑杆。';let xp='';const z=scores.role0,o=scores.role1,sl=scores.s_like,ml=scores.m_like;if(f.smEligible&&o>=72&&o>=z+12&&sl>=74)xp='你这组分数的节目效果是：1 先手很高，S-like 戏剧控场也很高。虚构角色里像是导演席和场控席一起被你包了；现实互动当然还是另一回事，边界、协商和退出权不随娱乐标签一起打包。';else if(f.smEligible&&z>=72&&z>=o+12&&ml>=74)xp='0 的回应/承接很高，M-like 戏剧交托也很高，于是“绒布球”那一组后缀会来敲门。它只描述你对抽象角色位置的偏好，不是现实里把决定权外包的许可证。';else if(o>=68&&z>=68)xp='0 和 1 居然一起高：你不是“中间值”，而是两套模式都真能开。别人先来时你会接，没人动时你也能起手；旧版单轴最容易把这种人压成 50，v4 终于不再把双高误判成没特点。';else if(sl>=70&&ml>=70)xp='S/M-like 两边一起高，不再互相扣分，于是雷达直接长成双叶。究极缝合怪不是说矛盾，而是你对不同角色位置都能产生明显的虚构兴趣。';else if(scores.aesthetic>=72)xp='审美这条终于从“女子气”里拆出来了：你对配色、材质、氛围、纪念物的敏感不再偷偷替性别风格加分。现在它可以自己堂堂正正长一片叶子。';else xp='这张雷达没有哪一根轴成功发动政变。重点不再是找一个唯一“阵营”，而是看哪些独立叶片一起长、哪些真的安静。';return'<p><b>【表里不一鉴定】</b> '+self+'</p><p><b>【XP底色解剖】</b> '+xp+'</p>';}
+async function finish(){const quality=responseQuality();const scores=scoreV4Answers(QUESTIONS,state.answers,{assignGender:state.assignGender});scores.response_quality=quality.score;scores.response_quality_detail=quality;scores.duration_ms=quality.duration_ms;scores._self_report={gender_label:state.selfGender,orientation_label:state.selfOrientation,role01:[...state.selfRole01]};scores._item_manifest=QUESTIONS.map(q=>({id:q.id,reuse:q.reuse,key:q.key||null,type:q.type,origin:q.origin||null,attention:q.attention||null}));scores._record={payload:'mf01sm-v4-record-1',version:VERSION,schema:SCHEMA,question_format:QUESTION_FORMAT,profile:{nickname:state.nickname,age:state.age,assignGender:state.assignGender,selfGender:state.selfGender,selfOrientation:state.selfOrientation,selfRole01:[...state.selfRole01]},history:{source_version:state.historySource,reused_ids:[...state.reusedIds]},timing:{started_at:state.startedAt,finished_at:Date.now(),duration_ms:quality.duration_ms},client:{language:navigator.language||'',timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'',viewport:[innerWidth,innerHeight],user_agent:navigator.userAgent.slice(0,320)},location:state.location};const result=classifyV4Result(scores,{assignGender:state.assignGender,age:state.age});scores.fun_tag=result.tag;scores.fun_chips=result.chips;scores._record.result={tag:result.tag,chips:result.chips,radar_axes:Object.fromEntries(RADAR_AXES.map(([k])=>[k,scores[k]]))};state.lastScores=scores;state.lastResult=result;$('#result').style.setProperty('--flag-bg',result.flag);$('#funTag').textContent=result.tag;$('#funChips').replaceChildren(...result.chips.map(text=>{const s=document.createElement('span');s.className='chip';s.textContent=text;return s;}));buildRadar(scores);$('#identityCards').replaceChildren(...[['出生指派顺向',scores.gender_aligned],['跨指派方向',scores.gender_cross],['非二元自我认同',scores.nonbinary_identity]].map(([label,v])=>{const d=document.createElement('div');d.className='identity-card';d.innerHTML='<b>'+esc(label)+'</b><strong>'+Math.round(v)+'/100</strong>';return d;}));$('#roast').innerHTML=roastV4(scores,result);const qc=quality.score>=80?'good':quality.score>=60?'mid':'low';$('#quality').className='quality '+qc;$('#quality').textContent=quality.score+'/100 · 注意力 '+quality.attention_passed+'/'+quality.attention_total+' · 平行题 '+quality.pair_score+'/100 · '+quality.ms_per_item+' ms/题 · 复用 '+quality.reused_count+' 题';show('result');historyCache.draft=null;historyCache.entries=[makeEntry(true,scores,result),...(historyCache.entries||[])].slice(0,HISTORY_LIMIT);await writeHistory(historyCache);const payload={version:VERSION,nickname:state.nickname,age:state.age,selfGender:state.selfGender,selfOrientation:state.selfOrientation,selfLikert:{role01:[...state.selfRole01]},location:state.location,gender:state.assignGender,tag:result.tag,scores,timestamp:Date.now()};try{const r=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const j=await r.json().catch(()=>({}));$('#archiveStatus').textContent=r.ok?('统计已回传：'+(j.d1?'D1':'KV fallback')+' · '+(j.version||VERSION)):('统计回传失败：HTTP '+r.status);if(!r.ok)console.error('Archive Failed',j);}catch(e){$('#archiveStatus').textContent='统计回传失败：'+e.message;console.error('Archive Failed',e);}}
+$('#copyResultBtn').addEventListener('click',async()=>{await copyText(await exportHistoryString());});$('#retakeBtn').addEventListener('click',()=>{state.index=0;renderQuestion();show('quiz');});
+readHistory().then(updateHistoryStatus);</script></body></html>`;
 }
 
-const FUN_BLOCK = String.raw`/* mf01sm-v382-v1-roast-tags */const fun=(()=>{
-const a=axes01;
-const amab=state.assignGender==='AMAB';
-const age=Number(document.getElementById('age')?.value||0);
-const smEligible=age>=16;
-const selfAxes=(scores._self_report&&scores._self_report.axes)||{};
-const comparison=scores.self_test_comparison||{};
-const attM=Number(scores.attr_m||0),attF=Number(scores.attr_f||0);
-const panish=attM>=52&&attF>=52&&Math.abs(attM-attF)<=18&&a.sexual_attraction_intensity>=.30;
-const aceish=Number(scores.ace||0)>=78&&a.sexual_attraction_intensity<=.28;
-const cross=scores.gender_cross>=64&&scores.gender_cross-scores.gender_aligned>=14;
-const agender=scores.nonbinary>=76&&scores.nonbinary>=Math.max(scores.gender_aligned,scores.gender_cross)+8;
-let left;
-if(agender)left='第四性 / 电子盆栽';
-else if(cross&&amab){
-  if(attM>=attF+18)left='软糯小蓝梁 / 蓝梁诱捕器';
-  else left='里百合 / 药娘预备役 / 软糯伪娘';
-}else if(cross&&!amab){
-  if(attF>=attM+18)left='铁T / 姬圈老保';
-  else left='√-16先锋 / 腐改跨';
-}else if(aceish)left='纯爱战神 / 戒断圣体';
-else if(panish)left='杂食恶犬 / 荤素不忌';
-else if(amab&&attM>=50&&attM>=attF+18)left='击剑爱好者 / 哇是成都人';
-else if(!amab&&attF>=50&&attF>=attM+18)left='柑橘味香女 / 兰州特产';
-else if(amab&&attF>=attM)left='平平无奇顺直男';
-else if(!amab&&attM>=attF)left='普通顺直女';
-else if(amab)left='击剑爱好者 / 哇是成都人';
-else left='柑橘味香女 / 兰州特产';
+function adminHtml(){return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>mf01sm v4 数据</title><style>body{margin:0;background:#111015;color:#eee7f0;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.wrap{max-width:1600px;margin:auto;padding:22px}.card{background:#1d1a22;border:1px solid #514a58;border-radius:18px;padding:18px}input,button{font:inherit;padding:10px 12px;border-radius:10px;border:1px solid #514a58;background:#27232d;color:#fff}button{cursor:pointer;background:#6750a4}.hidden{display:none}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.kv-toggle{font-size:12px;color:#bdb4c2}.table{overflow:auto;margin-top:16px}table{border-collapse:collapse;width:100%;min-width:1350px}th,td{border-bottom:1px solid #3c3741;padding:9px;vertical-align:top;text-align:left;font-size:12px}th{position:sticky;top:0;background:#1d1a22}.tag{max-width:320px}.scores{max-width:500px;white-space:normal}.record-details summary{cursor:pointer;color:#d0bcff;font-weight:700}.record-details pre{max-width:900px;max-height:560px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#0f0e12;border:1px solid #39343d;border-radius:12px;padding:12px}.summary{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.pill{background:#302b36;border-radius:999px;padding:5px 9px;font-size:12px}</style></head><body><main class="wrap"><section id="login" class="card"><h1>mf01sm 数据</h1><div class="controls"><input id="pwd" type="password" placeholder="ADMIN"><button id="go">Access</button><label class="kv-toggle"><input id="includeKv" type="checkbox"> 包含 KV 历史 / 回退</label></div><p id="msg"></p></section><section id="data" class="card hidden"><h1>Records</h1><div id="summary" class="summary"></div><div class="table"><table><thead><tr><th>Time</th><th>Ver</th><th>Nick</th><th>Age</th><th>Assign</th><th>Self</th><th>Location</th><th>IP</th><th>Tag</th><th>Scores / Raw</th></tr></thead><tbody id="body"></tbody></table></div></section></main><script>const esc=v=>String(v??'');function compact(item){const s=item.scores||{};if(String(item.version||'').startsWith('4.')){const keys=${scoreKeysJson};return keys.map(k=>k+':'+Math.round(Number(s[k]||0))).join(' | ')+' | Q:'+(s.response_quality??'-')+' | answers:'+Object.keys(s._answers||{}).length;}const a=s.axes01||{};return Object.entries(a).slice(0,16).map(([k,v])=>k+':'+(Number.isFinite(Number(v))?Number(v).toFixed(2):'-')).join(' | ');}function $(s){return document.querySelector(s)}$('#go').addEventListener('click',async()=>{const pwd=$('#pwd').value;$('#msg').textContent='Loading…';const r=await fetch('/api/admin/data?pwd='+encodeURIComponent(pwd)+($('#includeKv').checked?'&include_kv=1':''));const j=await r.json().catch(()=>({error:'bad response'}));if(!r.ok){$('#msg').textContent=j.error||('HTTP '+r.status);return;}$('#login').classList.add('hidden');$('#data').classList.remove('hidden');const rows=Array.isArray(j)?j:[];const v4=rows.filter(x=>String(x.version||'').startsWith('4.')).length;$('#summary').replaceChildren(...[['总记录',rows.length],['v4.x',v4],['历史版本',rows.length-v4]].map(([k,v])=>{const s=document.createElement('span');s.className='pill';s.textContent=k+' '+v;return s;}));const body=$('#body');body.replaceChildren();for(const item of rows){const tr=document.createElement('tr');const vals=[new Date(Number(item.timestamp||0)).toLocaleString(),item.version,item.nickname,item.age,item.assign_gender,item.self_gender,item.location,item.ip,item.tag];vals.forEach((v,i)=>{const td=document.createElement('td');td.textContent=esc(v);if(i===8)td.className='tag';tr.appendChild(td);});const td=document.createElement('td');td.className='scores';const p=document.createElement('div');p.textContent=compact(item);const details=document.createElement('details');details.className='record-details';const sum=document.createElement('summary');sum.textContent='完整记录 / Raw';const pre=document.createElement('pre');pre.textContent='展开后加载…';let loaded=false;details.addEventListener('toggle',()=>{if(details.open&&!loaded){pre.textContent=JSON.stringify(item,null,2);loaded=true;}});details.append(sum,pre);td.append(p,details);tr.appendChild(td);body.appendChild(tr);} });</script></body></html>`;}
 
-const i=Number(scores.initiative||0),d=Number(scores.dominance||0),sl=Number(scores.s_like||0),ml=Number(scores.m_like||0);
-const active=i>=72,passive=i<=28;
-const highS=sl>=74&&d>=58;
-const highM=ml>=74&&d<=42;
-const microActiveM=i>=56&&i<72&&ml>=56&&ml<74&&d<=48;
-const microPassiveS=i>28&&i<=44&&sl>=56&&sl<74&&d>=52;
-const pureActive=i>=68&&sl<58&&ml<58;
-const purePassive=i<=32&&sl<58&&ml<58;
-const allMid=[i,d,sl,ml].every(v=>Math.abs(v-50)<=12);
-const chaotic=(sl>=70&&ml>=70)||(Math.max(i,d,sl,ml)-Math.min(i,d,sl,ml)>=55);
-let right;
-if(smEligible&&active&&highS)right='爹系狂攻 / 强制爱暴君 / 掌控狂';
-else if(smEligible&&passive&&highM)right='绝赞绒布球 / 惹人怜爱的M圣体 / 专属抱枕';
-else if(smEligible&&active&&highM)right='提款机忠犬 / 奉献型败犬 / 苦主圣体';
-else if(smEligible&&passive&&highS)right='钓系绿茶 / 腹黑榨汁机 / 女王受';
-else if(microActiveM)right='纸老虎 / 窝里横';
-else if(microPassiveS)right='又菜又爱玩 / 嘴强王者';
-else if(pureActive)right='无情推土机 / 钝角';
-else if(purePassive)right='躺平咸鱼 / 纯粹承伤体';
-else if(allMid)right='端水大师 / 薛定谔的XP';
-else if(chaotic)right='究极缝合怪';
-else if(i>=62)right='无情推土机 / 钝角';
-else if(i<=38)right='躺平咸鱼 / 纯粹承伤体';
-else right='端水大师 / 薛定谔的XP';
+const main = mainHtml();
+const admin = adminHtml();
+const questionMatch = main.match(/const QUESTIONS=([\s\S]*?);const SCORE_KEYS=/);
+if (!questionMatch) throw new Error('v4 questionnaire JSON marker missing');
+const parsed = JSON.parse(questionMatch[1]);
+if (parsed.length !== 58) throw new Error(`Expected 58 v4 responses, got ${parsed.length}`);
+if (!main.includes('mf01sm-v4-leaf-history') || !main.includes('结果页叶片雷达') || !main.includes('MF01SM4:')) throw new Error('v4 UI/history markers missing');
+for (const tag of LOCKED_TAG_VOCABULARY) if (!main.includes(tag)) throw new Error(`Locked tag missing from v4 page: ${tag}`);
+if (!main.includes('nb1:4') || !main.includes('nb3:4')) throw new Error('v4 nonbinary self-identity fixes missing');
+if (!main.includes('0 / 1 自我感觉（可多选，但至少选一项）')) throw new Error('v4 0/1 multi-select baseline missing');
+if (!main.includes('CompressionStream') || !main.includes('window.mf01smV4History') || !main.includes("return'MF01SM4:'+packPlain(historyCache)")) throw new Error('v4 portable history API missing');
 
-const tag=left+' · '+right;
-const chips=[];
-chips.push(cross?'跨指派倾向明显':agender?'非二元适配高':'性别方向较混合');
-chips.push(panish?'双向吸引':aceish?'低吸引频段':attM>=attF+18?'偏男吸引':attF>=attM+18?'偏女吸引':'吸引方向混合');
-chips.push(i>=68?'先手偏多':i<=32?'等先手':'先后手都行');
-chips.push(d>=68?'控场偏强':d<=32?'更爱跟随':'协商控场');
-chips.push(scores.autonomy>=68?'自主边界强':scores.autonomy<=32?'比较能交托':'自主可商量');
-if(smEligible&&(sl>=65||ml>=65))chips.push('戏剧控场 '+scores.s_like+' / 戏剧交托 '+scores.m_like);
-
-let roastSelf='';
-const selfGenderNumeric=typeof selfAxes.gender_identity==='number'&&Number.isFinite(selfAxes.gender_identity);
-const selfLooksAssigned=selfGenderNumeric&&(amab?selfAxes.gender_identity<=.35:selfAxes.gender_identity>=.65);
-const meanGap=Number(comparison.mean_absolute_gap);
-const genderGap=Number((comparison.gender_identity||{}).gap);
-const directionGap=Number((comparison.sexual_attraction_direction||{}).gap);
-const intensityGap=Number((comparison.sexual_attraction_intensity||{}).gap);
-if(cross&&selfLooksAssigned&&Number.isFinite(genderGap)&&genderGap>=.24){
-  roastSelf='第一页还在努力把自己塞回出生指派那一格，后面的题已经把门拆了。顺向分没守住，跨向分一路越狱，前台简介和后台画像像两个互相拉黑的账号。查水表结论：嘴确实比分数硬；这不是身份判决书，但“默认皮肤已经开始掉漆”这件事很难继续装没看见。';
-}else if(agender&&selfGenderNumeric&&Number.isFinite(genderGap)&&genderGap>=.22){
-  roastSelf='第一页还想老老实实站进二元格子，题目端却把格子当成了建议而不是规定。你这套性别画像像拿鞋盒装液体猫：硬塞也能塞，松手马上又流出去。查水表结论：不是系统不会分类，是你本人对“只能二选一”这件事配合度实在有限。';
-}else if(panish&&((Number.isFinite(directionGap)&&directionGap>=.24)||(Number.isFinite(intensityGap)&&intensityGap>=.28))){
-  roastSelf='第一页把自己包装成单线运营，后面两边吸引分一起亮灯。不是海王鉴定书，是你的雷达压根没老实按性别分区。查水表结论：菜单看得比嘴上承认的宽；以后再说“我应该只吃这一口”，记得先和自己的答题记录串好口供。';
-}else if(aceish&&Number.isFinite(intensityGap)&&intensityGap>=.24){
-  roastSelf='第一页给吸引力频道开得挺响，题目端却集体进入省电模式。红尘在门口狂按铃，你的系统提示只有“稍后提醒”。查水表结论：浪漫、亲密和身体吸引本来就不是同一个旋钮，别为了剧情完整硬给自己补一条并不存在的高频信号。';
-}else if(Number.isFinite(meanGap)&&meanGap<=.14){
-  roastSelf='你这人最没节目效果的地方：第一页和后面题居然基本对得上。系统翻半天账本也没抓到大型翻车现场，前台怎么写，后台大致就怎么跑。老实人一枚，建议去隔壁相亲角领号，别继续占用本测试的瓜田带宽。';
-}else if(Number.isFinite(meanGap)&&meanGap>=.30){
-  roastSelf='第一页和后面题像两个没见过面的版本：大方向还能勉强认亲，细节已经开始互相举报。你对自己的描述更像公开简介，题目端则像不小心外泄的草稿箱。查水表结论：不是谁真谁假，而是你对自己“以为会怎样”和“实际怎么选”之间，确实隔着一条不小的沟。';
-}else{
-  roastSelf='没抓到史诗级翻车，但也不是完全一比一复刻。第一页像你给自己的角色简介，后面题像实际跑起来后的实机录像：主线差不多，边角处还是会露出几处“原来我会这么选”的小事故。属于轻微打脸，暂不执行公开处刑。';
-}
-
-let roastXp='';
-if(smEligible&&active&&highS){
-  roastXp='你不是在参与互动，你是想接管导演席。先手要抢、节奏要控、规则最好也由你来写，别人还在犹豫，你脑内已经开完三次作战会议。这个“强制爱暴君”帽子主要是在损你那条站得笔直的控场欲；虚构剧情里可以当最终 Boss，现实互动里记得别把队友一起写进你的剧本。';
-}else if(smEligible&&passive&&highM){
-  roastXp='你的人设像一颗自带“请安排我”按钮的绒布球：先手能不抢就不抢，控制权递得比外卖还快，压力剧情反而容易让你进入角色。白给归白给，娱乐结果可以躺平，现实里的边界和重要决定别顺手也一起打包寄出去。';
-}else if(smEligible&&passive&&highS){
-  roastXp='这是最邪门的象限之一：本人不一定先动，场子倒想先归你管。表面像坐在观众席，实际上每个人怎么演你心里都有分镜；自己不抢麦，但特别会让别人顺着你的节奏走。“腹黑榨汁机”扣得这么响，纯粹因为你的低先手和高控场组合太有节目效果。';
-}else if(smEligible&&active&&highM){
-  roastXp='你是那种冲锋号自己吹、任务自己扛，干完还会回头确认“这样行不行”的忠犬型怪东西。行动力冲在前排，决定权却不怎么恋战，越忙越容易把方向盘递给别人。“提款机忠犬”是在损这种出力积极、控制权随缘的反差，现实里别真把自己活成无限续杯服务。';
-}else if(microActiveM){
-  roastXp='纸老虎本虎：第一步你敢迈，真到了“到底听谁的”又容易开始随缘。外壳有点冲，内核没有想象中那么硬；典型的先龇牙两秒，再自己把遥控器递出去。你不是没主见，只是主见经常在关键时刻突然请年假。';
-}else if(microPassiveS){
-  roastXp='你最大的本事是本人没怎么动，意见已经铺满全场。行动上偏等别人开局，精神上又忍不住点评路线；属于手柄不拿，嘴里已经完成三周目攻略。“又菜又爱玩 / 嘴强王者”不是冤枉，是你的先手分和控场分真的在互相拆台。';
-}else if(pureActive||(!smEligible&&i>=62)){
-  roastXp='别人还在“要不再想想”，你已经把第一步踩出去了。你未必爱控制别人，但非常讨厌事情卡在原地，属于没有王位也要自己推剧情的类型。“无情推土机”不是说你没感情，是你对“别磨叽，先动起来”这件事有一点近乎宗教般的执着。';
-}else if(purePassive||(!smEligible&&i<=38)){
-  roastXp='你不是没想法，你只是把开场权长期外包。别人不动，你就陪着世界一起待机；别人一招手，你又能正常跟上。“纯粹承伤体”的核心不是弱，是最好先给你一个明确入口，不然你真能在开场动画里坐到片尾曲。';
-}else if(smEligible&&aceish){
-  roastXp='你的雷达对身体吸引这条频道基本处于省电模式。浪漫、亲密、喜欢一个人都可以另算，但“见到符合偏好的人就自动拉满信号”显然不是你的主线任务。红尘天天给你发推送，你稳定点“稍后提醒”；纯爱战神这顶帽子至少比硬装热血番主角合身。';
-}else if(chaotic){
-  roastXp='这张雷达图不是画像，是几个亚文化社团抢一块宣传栏留下的施工现场。主动、主导、S/M-like 几条线互相打架，哪一派都想说你是自己人，结果谁都没法完整领走。“究极缝合怪”不是诊断，是系统已经懒得继续给你找单一物种名了。';
-}else if(allMid||right==='端水大师 / 薛定谔的XP'){
-  roastXp='恭喜，你成功把大部分旋钮拧在“看情况”。谁想从这张图里抄到一个干脆结论，谁就会先疯。端水大师不是单纯中庸，而是你真的很会根据对象和场景换挡；优点叫适配力，缺点叫别人问你“所以你到底想怎样”时，你有概率把对方一起逼到看破红尘。';
-}else if(i>=62){
-  roastXp='你整体还是明显偏先手：不一定非要当老大，但很难长期忍受剧情没人推进。别人负责犹豫，你负责把下一页翻过去。说好听点是行动派，说难听点就是你和“再等等看”这五个字有私人恩怨。';
-}else if(i<=38){
-  roastXp='你整体偏回应型：先观察、等信号、确认场面安全，再决定要不要往前走。别人眼里可能像慢半拍，其实你只是拒绝替全世界承担开场动画。真有人把路铺出来以后，你通常也没那么难带。';
-}else{
-  roastXp='你的互动底色没有哪条轴夸张到能单独称王：能主动，也会等人；能控场，也接受协商。听起来非常健康，作为娱乐测试却多少有点扫兴。系统只能给出一句欠揍总结：此人配置正常，暂未发现值得拉警报的隐藏 Boss。';
-}
-
-let flag='linear-gradient(135deg,#5bcefa,#f5a9b8,#fff,#b7a4ff,#5bcefa)';
-if(agender)flag='linear-gradient(135deg,#111,#666,#fff,#8c63ff,#f5df4d)';
-else if(cross)flag='linear-gradient(135deg,#5bcefa,#f5a9b8,#fff,#f5a9b8,#5bcefa)';
-else if(panish)flag='linear-gradient(135deg,#d60270,#9b4f96,#0038a8)';
-else if(aceish)flag='linear-gradient(135deg,#000,#a3a3a3,#fff,#800080)';
-else if(d>=72)flag='linear-gradient(135deg,#552583,#a66dd4,#f3d8ff,#547bd1)';
-return{tag,chips,flag,roastSelf,roastXp};})();scores.fun_tag=fun.tag;scores.fun_chips=fun.chips;`;
-
-function patchMain(source) {
-  let html = source;
-
-  // v3.8.2 is presentation/admin-only. The v3.7 measurement schema and every questionnaire item stay unchanged.
-  html = html.replaceAll('3.7.0', VERSION);
-  html = html.replaceAll('v3.7 ', 'v3.8.2 ');
-  html = html.replaceAll('mf01sm-v37-age-gate', 'mf01sm-v38-age-gate');
-
-  // One client-side age range: 13–99. The v3.8 server deliberately does not enforce age range.
-  html = html.replaceAll("age.min='16'", "age.min='13'");
-  html = html.replaceAll("age.max='90'", "age.max='99'");
-  html = html.replaceAll("age.placeholder='16–90'", "age.placeholder='13–99'");
-  html = html.replaceAll('n<16||n>90', 'n<13||n>99');
-  html = html.replaceAll('n < 16 || n > 90', 'n < 13 || n > 99');
-  html = html.replaceAll('age>90', 'age>99');
-  html = html.replaceAll('age > 90', 'age > 99');
-  html = html.replaceAll('min="16" max="90"', 'min="13" max="99"');
-  html = html.replaceAll('placeholder="16–90"', 'placeholder="13–99"');
-  html = html.replaceAll('16–90', '13–99');
-  html = html.replaceAll('13–90', '13–99');
-  html = html.replaceAll('16 岁及以上', '13 岁及以上');
-  html = html.replaceAll('年龄门槛：16+', '年龄范围：13–99');
-  html = html.replaceAll('16+', '13+');
-
-  const funPattern = /const fun=\(\(\)=>\{[\s\S]*?\}\)\(\);scores\.fun_tag=fun\.tag;scores\.fun_chips=fun\.chips;/;
-  if (!funPattern.test(html)) throw new Error('Could not locate the legacy entertainment-tag block.');
-  html = html.replace(funPattern, FUN_BLOCK);
-  const analysisMarker = "+personality+interaction+sm+'</div><div class=\"result-block\"><b>第一页自评 ↔ 题目画像</b>";
-  const roastAnalysis = "+personality+interaction+sm+'</div><div class=\"result-block\"><b>结果页“打脸”解析</b><p><b>【表里不一鉴定】</b> '+fun.roastSelf+'</p><p><b>【XP底色解剖】</b> '+fun.roastXp+'</p></div><div class=\"result-block\"><b>第一页自评 ↔ 题目画像</b>";
-  if (!html.includes(analysisMarker)) throw new Error('Could not locate the result analysis insertion point.');
-  html = html.replace(analysisMarker, roastAnalysis);
-  html = html.replace('它们不是现实行为判断。', '它们不是现实行为判断；上方娱乐 tag 和“打脸”正文可以很嘴欠，但不是诊断、身份判定或现实同意。');
-
-  return html;
-}
-
-function patchAdmin(source) {
-  let html = source.replaceAll('3.7.0', VERSION);
-  html = html.replace(
-    "if(String(item.version||'').startsWith('3.7')){",
-    "if(String(item.version||'').startsWith('3.8')||String(item.version||'').startsWith('3.7')){"
-  );
-  html = html.replace(
-    '.hidden{display:none}</style>',
-    '.hidden{display:none}.record-details{margin-top:8px}.record-details summary{cursor:pointer;color:#d0bcff;font-weight:700}.record-details pre{max-width:760px;max-height:520px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#17151b;border:1px solid #39363d;border-radius:12px;padding:12px;color:#ded7e2}.kv-toggle{display:flex;align-items:center;gap:8px;margin-top:12px;color:#bdb5c2;font-size:12px}.kv-toggle input{padding:0;width:auto;min-height:0;accent-color:#d0bcff}</style>'
-  );
-  html = html.replace(
-    '<button id="go">Access</button><p id="msg"></p>',
-    '<button id="go">Access</button><label class="kv-toggle"><input id="includeKv" type="checkbox">包含 KV 历史 / 回退数据（额外读取；1.x 在这里）</label><p id="msg"></p>'
-  );
-  html = html.replace(
-    "fetch('/api/admin/data?pwd='+encodeURIComponent(pwd))",
-    "fetch('/api/admin/data?pwd='+encodeURIComponent(pwd)+(document.getElementById('includeKv')?.checked?'&include_kv=1':''))"
-  );
-  html = html.replace(
-    'values.forEach((v,i)=>{const td=document.createElement(\'td\');td.textContent=esc(v);if(i===9)td.className=\'tag\';tr.appendChild(td);});body.appendChild(tr);});',
-    'values.forEach((v,i)=>{const td=document.createElement(\'td\');td.textContent=esc(v);if(i===9)td.className=\'tag\';tr.appendChild(td);});const details=document.createElement(\'details\');details.className=\'record-details\';const summary=document.createElement(\'summary\');summary.textContent=\'完整记录 / Raw\';const pre=document.createElement(\'pre\');pre.textContent=\'展开后加载…\';let loaded=false;details.addEventListener(\'toggle\',()=>{if(details.open&&!loaded){pre.textContent=JSON.stringify(item,null,2);loaded=true;}});details.append(summary,pre);if(tr.children[10])tr.children[10].appendChild(details);body.appendChild(tr);});'
-  );
-  html = html.replace('历史版本继续原样保留。v3.1 起把浪漫吸引与身体/性吸引分开；Ver 列直接来自每条记录的 version。', '历史版本继续原样保留。Scores 列保留紧凑摘要；展开“完整记录 / Raw”可查看该条记录返回的全部字段，包括所有原始子量表、axes01、第一页自评、self↔test 差值、response_quality_detail、raw answers、schema/question format 与娱乐 tag/chips。');
-  if (!html.includes('完整记录 / Raw')) throw new Error('Admin full-record details control was not injected.');
-  if (!html.includes('includeKv') || !html.includes('include_kv=1')) throw new Error('Admin optional KV-history control was not injected.');
-  return html;
-}
-
-function parseQuestions(html) {
-  const match = html.match(/const QUESTIONS=([\s\S]*?);const LABELS=/);
-  if (!match) throw new Error('Rendered questionnaire JSON was not found.');
-  return JSON.parse(match[1]);
-}
-
-const legacyMain = await render('/');
-const legacyAdmin = await render('/admin');
-const mainHtml = patchMain(legacyMain);
-const adminHtml = patchAdmin(legacyAdmin);
-
-// v3.8.2 is a presentation/admin revision: questionnaire content must remain byte-for-byte equivalent as data.
-const beforeQuestions = parseQuestions(legacyMain);
-const afterQuestions = parseQuestions(mainHtml);
-if (JSON.stringify(beforeQuestions) !== JSON.stringify(afterQuestions)) {
-  throw new Error('v3.8.2 page generation changed questionnaire content; refusing to generate.');
-}
-if (afterQuestions.length !== 58) throw new Error(`Expected 58 v3.7/v3.8 responses, found ${afterQuestions.length}.`);
-if (!mainHtml.includes('v3.8.2') || !mainHtml.includes('mf01sm-v38-age-gate')) throw new Error('v3.8.2 page markers are missing.');
-if (!mainHtml.includes('mf01sm-v382-v1-roast-tags') || !mainHtml.includes('里百合 / 药娘预备役 / 软糯伪娘') || !mainHtml.includes('爹系狂攻 / 强制爱暴君 / 掌控狂') || !mainHtml.includes('端水大师 / 薛定谔的XP') || !mainHtml.includes('结果页“打脸”解析')) throw new Error('v3.8.2 v1-style entertainment-tag layer is incomplete.');
-if (mainHtml.includes('里百合风味 / 裙摆叛逃者') || mainHtml.includes('爹系暴君 / 控场狂魔')) throw new Error('An assistant-authored v3.8.2 tag survived the locked user vocabulary.');
-if (!mainHtml.includes('【表里不一鉴定】') || !mainHtml.includes('【XP底色解剖】')) throw new Error('Polished roast-analysis headings are missing.');
-if (!/id="age"[^>]*min="13"[^>]*max="99"/.test(mainHtml)) throw new Error('Generated age input is not 13–99.');
-if (!mainHtml.includes('13–99')) throw new Error('Generated age description does not expose 13–99.');
-if (/n\s*<\s*16|age\s*<\s*16|n\s*>\s*90|age\s*>\s*90/.test(mainHtml)) throw new Error('A legacy 16/90 client age gate survived v3.8.2 generation.');
-
-const generated = `// Generated by scripts/generate-mf01sm-current.mjs. Do not edit by hand.\nexport const MAIN_HTML = ${JSON.stringify(mainHtml)};\nexport const ADMIN_HTML = ${JSON.stringify(adminHtml)};\n`;
+const generated = `// Generated by scripts/generate-mf01sm-current.mjs. Do not edit by hand.\nexport const MAIN_HTML = ${JSON.stringify(main)};\nexport const ADMIN_HTML = ${JSON.stringify(admin)};\n`;
 await writeFile(outputPath, generated, 'utf8');
-console.log(`Generated mf01sm ${VERSION} static pages from the unchanged v3.7 measurement snapshot (${afterQuestions.length} responses; locked v1-style roast tags + polished roast analysis + complete admin details only).`);
+console.log(`Generated mf01sm ${V4_VERSION}: ${parsed.length} stable-id responses, independent leaf radar, complete raw stats, blurred flag, and v4.x cookie migration.`);
