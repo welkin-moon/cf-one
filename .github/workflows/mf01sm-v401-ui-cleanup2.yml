@@ -1,0 +1,44 @@
+name: mf01sm v4.0.1 UI cleanup retry
+
+on:
+  push:
+    branches: [fix/mf01sm-v401-ui-cleanup]
+    paths:
+      - .github/workflows/mf01sm-v401-ui-cleanup2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/mf01sm-v401-ui-cleanup
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply patch
+        run: python3 scripts/.mf01sm-v401-patch.py
+      - name: Generate and verify
+        run: |
+          pnpm build:mf01sm
+          pnpm check
+      - name: Commit verified 4.0.1 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          rm -f scripts/.mf01sm-v401-patch.py
+          rm -f .github/workflows/mf01sm-v401-ui-cleanup.yml .github/workflows/mf01sm-v401-ui-cleanup2.yml
+          git add -A
+          git commit -m 'Clean developer-facing copy from mf01sm 4.0.1'
+          git push origin HEAD:fix/mf01sm-v401-ui-cleanup
