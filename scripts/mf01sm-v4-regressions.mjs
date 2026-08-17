@@ -67,10 +67,12 @@ for (const tag of LOCKED_TAG_VOCABULARY) assert.ok(MAIN_HTML.includes(tag),`lock
 assert.ok(MAIN_HTML.includes('本机答题记录'));
 assert.ok(MAIN_HTML.includes('光谱自我定位'));
 assert.ok(MAIN_HTML.includes('这一页不会参与测试计分。'));
-for (const key of ['gender_expression','sexual_attraction_direction','sexual_attraction_intensity','sexual_expression','romantic_tendency','relationship_structure']) assert.ok(MAIN_HTML.includes('data-axis=\"'+key+'\"'),`self-report axis missing: ${key}`);
-assert.ok(MAIN_HTML.includes('0 / 1 自我感觉（可多选，但至少选一项）'));
+for (const key of ['gender_expression','sexual_attraction_direction','sexual_attraction_intensity','libido','romantic_tendency','relationship_structure']) assert.ok(MAIN_HTML.includes('data-axis=\"'+key+'\"'),`self-report axis missing: ${key}`);
+assert.ok(!MAIN_HTML.includes('id=\"selfRole0\"') && !MAIN_HTML.includes('id=\"selfRole1\"'),'3.8.2 self-report page must not grow questionnaire 0/1 controls');
 assert.ok(MAIN_HTML.includes('flag-haze') && MAIN_HTML.includes('filter:blur(42px)'),'blurred gradient flag must render');
 assert.ok(MAIN_HTML.includes('维度雷达') && MAIN_HTML.includes('radar-leaf'));
+assert.ok(MAIN_HTML.includes('<div class=\"result-block\"><h3>自我定位 ↔ 题目画像</h3>'),'comparison card must render as valid HTML');
+assert.ok(!MAIN_HTML.includes('class=\\\"result-block\\\"><h3>自我定位 ↔ 题目画像'),'comparison card must not contain literal generator escapes');
 assert.ok(MAIN_HTML.includes('window.mf01smV4History'));
 assert.ok(MAIN_HTML.includes("return'MF01SM4:'+packPlain(historyCache)"),'copy/export must use portable uncompressed payloads');
 assert.ok(MAIN_HTML.includes("entry.answers?.[q.reuse]"),'history reuse must use the stable reuse key');
@@ -103,7 +105,7 @@ const scoreJson=JSON.stringify(fullScores);
 assert.ok(scoreJson.length<180000,`complete score payload must fit runtime bound, got ${scoreJson.length}`);
 let inserted=null,kvWrites=0;
 const env={mf01smsql:{prepare(sql){assert.match(sql,/INSERT INTO records/);return{bind(...values){inserted=values;return{async run(){return{success:true}}}}}}},mf01sm:{async put(){kvWrites++}}};
-const fullSelfStats={_schema:'mf01sm-v4-self-stats-1',gender_identity:0.82,gender_identity_special:null,gender_expression:0.76,sexual_attraction_direction:0.61,sexual_attraction_intensity:0.37,sexual_expression:0.22,romantic_tendency:0.89,relationship_structure:0.18,role01:['0','1']};
+const fullSelfStats={_schema:'mf01sm-v4-self-stats-1',gender_identity:0.82,gender_identity_special:null,gender_expression:0.76,sexual_attraction_direction:0.61,sexual_attraction_intensity:0.37,libido:0.22,romantic_tendency:0.89,relationship_structure:0.18};
 const save=await current.fetch(new Request('https://mf01sm.internal/api/save',{method:'POST',headers:{'content-type':'application/json','CF-Connecting-IP':'127.0.0.1'},body:JSON.stringify({version:V4_VERSION,nickname:'regression',age:16,gender:'AMAB',selfGender:'性别轴:0.820',selfOrientation:'性吸引方向:0.610',selfLikert:fullSelfStats,location:'Unavailable',tag:'test',scores:fullScores,timestamp:Date.now()})}),env);
 assert.equal(save.status,200);const saveJson=await save.json();assert.equal(saveJson.d1,true);assert.equal(saveJson.kv,false);assert.equal(kvWrites,0);assert.ok(inserted);const persistedSelf=JSON.parse(inserted[6]);assert.deepEqual(persistedSelf,fullSelfStats,'independent self-report statistics must be persisted in self_likert');const persisted=JSON.parse(inserted[11]);assert.deepEqual(persisted._answers,fullScores._answers,'raw answers must be persisted separately in scores');assert.deepEqual(persisted._item_manifest,fullScores._item_manifest,'item manifest must be persisted');assert.equal(persisted._record.payload,'mf01sm-v4-record-2');
 
