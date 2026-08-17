@@ -97,7 +97,7 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git rm .tmp/mf01sm-v402-patch.py .github/workflows/mf01sm-v402-apply.yml
+          git rm -f .tmp/mf01sm-v402-patch.py .github/workflows/mf01sm-v402-apply.yml
           git add apps/mf01sm/src/v4-model.js apps/mf01sm/src/current-runtime.js scripts/generate-mf01sm-current.mjs scripts/mf01sm-v4-regressions.mjs scripts/deploy-mf01sm-runtime.mjs
           git commit -m 'Restore self-report statistics in mf01sm 4.0.2'
           git push origin HEAD:feature/mf01sm-v4.0.2-stats-compat
