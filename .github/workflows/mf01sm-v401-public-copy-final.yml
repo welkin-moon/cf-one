@@ -1,0 +1,64 @@
+name: mf01sm v4.0.1 public copy final
+
+on:
+  push:
+    branches: [fix/mf01sm-v401-ui-cleanup]
+    paths:
+      - .github/workflows/mf01sm-v401-public-copy-final.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/mf01sm-v401-ui-cleanup
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Remove public backend implementation wording
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          def one(path, old, new):
+              p=Path(path); s=p.read_text(); n=s.count(old)
+              if n!=1: raise SystemExit(f'{path}: expected one match, got {n}: {old!r}')
+              p.write_text(s.replace(old,new))
+          g='scripts/generate-mf01sm-current.mjs'
+          one(g,'<h3>作答质量 / 回传</h3>','<h3>作答质量</h3>')
+          old="$('#archiveStatus').textContent=r.ok?('统计已回传：'+(j.d1?'D1':'KV fallback')+' · '+(j.version||VERSION)):('统计回传失败：HTTP '+r.status);"
+          new="$('#archiveStatus').textContent=r.ok?'统计已保存。':('统计保存失败：HTTP '+r.status);"
+          one(g,old,new)
+          one(g,"$('#archiveStatus').textContent='统计回传失败：'+e.message;","$('#archiveStatus').textContent='统计保存失败：'+e.message;")
+          needle="const forbiddenFrontendCopy = ['v4 把 0 / 1','reuse key','独立叶片雷达 · v4.x 稳定题目迁移','结果页叶片雷达','非二元认同分只来自','也可在控制台调用','旧版单轴','v4 终于','13–15 岁不会出现四组 16+ 极端娱乐后缀'];"
+          repl="const forbiddenFrontendCopy = ['v4 把 0 / 1','reuse key','独立叶片雷达 · v4.x 稳定题目迁移','结果页叶片雷达','非二元认同分只来自','也可在控制台调用','旧版单轴','v4 终于','13–15 岁不会出现四组 16+ 极端娱乐后缀','作答质量 / 回传','统计已回传：','D1','KV fallback'];"
+          one(g,needle,repl)
+          t='scripts/mf01sm-v4-regressions.mjs'
+          needle2="for (const text of ['v4 把 0 / 1','reuse key','独立叶片雷达 · v4.x 稳定题目迁移','结果页叶片雷达','非二元认同分只来自','也可在控制台调用','旧版单轴','v4 终于','13–15 岁不会出现四组 16+ 极端娱乐后缀']) assert.ok(!MAIN_HTML.includes(text),`developer-facing copy leaked: ${text}`);"
+          repl2="for (const text of ['v4 把 0 / 1','reuse key','独立叶片雷达 · v4.x 稳定题目迁移','结果页叶片雷达','非二元认同分只来自','也可在控制台调用','旧版单轴','v4 终于','13–15 岁不会出现四组 16+ 极端娱乐后缀','作答质量 / 回传','统计已回传：','D1','KV fallback']) assert.ok(!MAIN_HTML.includes(text),`developer-facing copy leaked: ${text}`);"
+          one(t,needle2,repl2)
+          PY
+      - name: Regenerate and verify
+        run: |
+          pnpm build:mf01sm
+          pnpm check
+      - name: Commit final public-copy cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          rm .github/workflows/mf01sm-v401-public-copy-final.yml
+          git add -A
+          git commit -m 'Hide backend transport details from mf01sm 4.0.1 UI'
+          git push origin HEAD:fix/mf01sm-v401-ui-cleanup
