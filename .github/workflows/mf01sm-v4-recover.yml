@@ -1,3 +1,4 @@
+# retry after byte-exact archive chunk correction
 name: mf01sm v4 recover
 
 on:
