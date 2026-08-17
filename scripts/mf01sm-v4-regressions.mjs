@@ -75,7 +75,7 @@ assert.ok(MAIN_HTML.includes("a.reuse===q.reuse"),'history reuse must require an
 assert.ok(MAIN_HTML.includes("payload:'mf01sm-v4-record-1'"));
 assert.ok(MAIN_HTML.includes('_item_manifest=QUESTIONS.map'));
 assert.ok(MAIN_HTML.includes('reused_ids:[...state.reusedIds]'));
-for (const text of ['v4 把 0 / 1','reuse key','独立叶片雷达 · v4.x 稳定题目迁移','结果页叶片雷达','非二元认同分只来自','也可在控制台调用','旧版单轴','v4 终于','13–15 岁不会出现四组 16+ 极端娱乐后缀']) assert.ok(!MAIN_HTML.includes(text),`developer-facing copy leaked: ${text}`);
+for (const text of ['v4 把 0 / 1','reuse key','独立叶片雷达 · v4.x 稳定题目迁移','结果页叶片雷达','非二元认同分只来自','也可在控制台调用','旧版单轴','v4 终于','13–15 岁不会出现四组 16+ 极端娱乐后缀','作答质量 / 回传','统计已回传：','D1','KV fallback']) assert.ok(!MAIN_HTML.includes(text),`developer-facing copy leaked: ${text}`);
 assert.ok(!MAIN_HTML.includes('"origin":'),'question provenance must not be shipped in browser questionnaire JSON');
 assert.ok(!MAIN_HTML.includes("+(q.origin||'v4')"),'question header must not expose source provenance');
 assert.ok(ADMIN_HTML.includes('完整记录 / Raw') && ADMIN_HTML.includes('JSON.stringify(item,null,2)'));
