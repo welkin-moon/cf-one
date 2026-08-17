@@ -1,0 +1,60 @@
+name: mf01sm 4.0.2 apply
+
+on:
+  push:
+    branches: [feature/mf01sm-v4.0.2-stats-compat]
+    paths:
+      - .github/workflows/mf01sm-v402-apply.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/mf01sm-v4.0.2-stats-compat
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Lock questionnaire and scoring before patch
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE' > /tmp/v4-core-before.sha
+          import {createHash} from 'node:crypto';
+          import {V4_QUESTIONS,scoreV4Answers,classifyV4Result} from './apps/mf01sm/src/v4-model.js';
+          const stable=JSON.stringify({q:V4_QUESTIONS,score:scoreV4Answers.toString(),classify:classifyV4Result.toString()});
+          console.log(createHash('sha256').update(stable).digest('hex'));
+          NODE
+      - name: Apply focused patch
+        run: python3 .tmp/mf01sm-v402-patch.py
+      - name: Prove questionnaire scoring and tags were untouched
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE' > /tmp/v4-core-after.sha
+          import {createHash} from 'node:crypto';
+          import {V4_QUESTIONS,scoreV4Answers,classifyV4Result} from './apps/mf01sm/src/v4-model.js';
+          const stable=JSON.stringify({q:V4_QUESTIONS,score:scoreV4Answers.toString(),classify:classifyV4Result.toString()});
+          console.log(createHash('sha256').update(stable).digest('hex'));
+          NODE
+          cmp /tmp/v4-core-before.sha /tmp/v4-core-after.sha
+      - run: pnpm install --frozen-lockfile
+      - name: Full repository check
+        run: pnpm check
+      - name: Commit verified 4.0.2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .tmp/mf01sm-v402-patch.py .github/workflows/mf01sm-v402-apply.yml
+          git add apps/mf01sm/src/v4-model.js apps/mf01sm/src/current-runtime.js scripts/generate-mf01sm-current.mjs scripts/mf01sm-v4-regressions.mjs scripts/deploy-mf01sm-runtime.mjs
+          git commit -m 'Restore self-report statistics in mf01sm 4.0.2'
+          git push origin HEAD:feature/mf01sm-v4.0.2-stats-compat
