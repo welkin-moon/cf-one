@@ -1,8 +1,9 @@
 import { MAIN_HTML, ADMIN_HTML } from './current-pages.generated.js';
 
-const VERSION = '4.0.1';
+const VERSION = '4.0.2';
 const MAX_BODY_CHARS = 384000;
 const MAX_SCORES_CHARS = 180000;
+const MAX_SELF_STATS_CHARS = 24000;
 
 function text(value, max = 240) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -55,6 +56,7 @@ async function saveRecord(request, env) {
   if (scoreJson.length > MAX_SCORES_CHARS) return json({ error: 'scores too large' }, 413);
   const selfLikert = parseObject(data.selfLikert);
   const selfLikertJson = JSON.stringify(selfLikert);
+  if (selfLikertJson.length > MAX_SELF_STATS_CHARS) return json({ error: 'self stats too large' }, 413);
   const timestamp = Number.isSafeInteger(data.timestamp) && data.timestamp > 0 ? data.timestamp : Date.now();
   const id = `rec_${Date.now()}_${crypto.randomUUID().replaceAll('-', '').slice(0, 10)}`;
   const ip = text(request.headers.get('CF-Connecting-IP') || request.headers.get('cf-connecting-ip') || 'Unknown', 96);
