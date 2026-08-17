@@ -61,6 +61,13 @@ jobs:
               out.append(line)
           p.write_text('\n'.join(out)+'\n')
           PY
+      - name: Syntax check patch
+        shell: bash
+        run: |
+          if ! python3 -m py_compile .tmp/mf01sm-v402-patch.py; then
+            nl -ba .tmp/mf01sm-v402-patch.py | sed -n '128,152p'
+            exit 1
+          fi
       - name: Apply focused patch
         run: python3 .tmp/mf01sm-v402-patch.py
       - name: Prove questionnaire scoring and tags were untouched
