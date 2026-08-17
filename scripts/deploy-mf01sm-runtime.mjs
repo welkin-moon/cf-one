@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const rootDirectory = path.resolve(scriptDirectory, '..');
 const webDirectory = path.join(rootDirectory, 'apps/web');
-const VERSION = '4.0.1';
+const VERSION = '4.0.2';
 
 function runWrangler(arguments_) {
   return new Promise((resolve, reject) => {
@@ -79,11 +79,11 @@ try {
   const bundlePath = await findJavaScript(outDirectory);
   const source = await readFile(bundlePath, 'utf8');
   const requiredMarkers = [
-    '4.0.1','mf01sm-v4-independent-leaf','mixed-v4-stable-reuse',
+    '4.0.2','mf01sm-v4-independent-leaf','mixed-v4-stable-reuse',
     'mf01sm-v4-record-1','MF01SM4:','window.mf01smV4History','gender_style_masc','gender_style_fem',
     'aesthetic','role0','role1','s_like','m_like','attr_m','attr_f','sexual_expression','romantic_tendency',
     'mono','poly','nonbinary_identity','response_quality_detail','CF-Connecting-IP','payload too large',
-    'scores too large','KV Legacy/Fallback','里百合 / 药娘预备役 / 软糯伪娘','爹系狂攻 / 强制爱暴君 / 掌控狂'
+    'scores too large','self stats too large','mf01sm-v4-self-stats-1','mf01sm-v4-history-2','mf01sm-v4-answers-1','KV Legacy/Fallback','里百合 / 药娘预备役 / 软糯伪娘','爹系狂攻 / 强制爱暴君 / 掌控狂'
   ];
   const missingMarkers = requiredMarkers.filter(marker => !source.includes(marker));
   if (missingMarkers.length) throw new Error(`mf01sm runtime bundle is missing stable v4 integrity markers: ${missingMarkers.join(', ')}; refusing to deploy.`);
@@ -98,7 +98,7 @@ try {
     throw new Error('mf01sm historical bindings are incomplete; refusing to deploy runtime bundle.');
   }
 
-  const message = 'mf01sm v4.0.1 frontend copy cleanup';
+  const message = 'mf01sm v4.0.2 independent self-report stats and stable v4 answer compatibility';
   const metadata = {
     main_module: 'worker.js',
     compatibility_date: settings?.compatibility_date || '2026-05-07',

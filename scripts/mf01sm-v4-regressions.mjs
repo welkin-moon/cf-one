@@ -8,7 +8,7 @@ import {
 import { MAIN_HTML, ADMIN_HTML } from '../apps/mf01sm/src/current-pages.generated.js';
 import current from '../apps/mf01sm/src/current-runtime.js';
 
-assert.equal(V4_VERSION, '4.0.1');
+assert.equal(V4_VERSION, '4.0.2');
 assert.equal(V4_SCHEMA, 'mf01sm-v4-independent-leaf');
 assert.equal(V4_QUESTION_FORMAT, 'mixed-v4-stable-reuse');
 assert.equal(V4_QUESTIONS.length, 58, 'v4 keeps the 58-response footprint');
@@ -65,14 +65,20 @@ assert.ok(r.tag.startsWith('纯爱战神 / 戒断圣体 · '),'low attraction cl
 
 for (const tag of LOCKED_TAG_VOCABULARY) assert.ok(MAIN_HTML.includes(tag),`locked vocabulary missing: ${tag}`);
 assert.ok(MAIN_HTML.includes('本机答题记录'));
+assert.ok(MAIN_HTML.includes('光谱自我定位'));
+assert.ok(MAIN_HTML.includes('这一页不会参与测试计分。'));
+for (const key of ['gender_expression','sexual_attraction_direction','sexual_attraction_intensity','sexual_expression','romantic_tendency','relationship_structure']) assert.ok(MAIN_HTML.includes('data-axis=\"'+key+'\"'),`self-report axis missing: ${key}`);
 assert.ok(MAIN_HTML.includes('0 / 1 自我感觉（可多选，但至少选一项）'));
-assert.ok(MAIN_HTML.includes("if(!selfRole01.length)return alert('0 / 1 自我感觉至少选一项；两项都可以选。')"));
 assert.ok(MAIN_HTML.includes('flag-haze') && MAIN_HTML.includes('filter:blur(42px)'),'blurred gradient flag must render');
 assert.ok(MAIN_HTML.includes('维度雷达') && MAIN_HTML.includes('radar-leaf'));
 assert.ok(MAIN_HTML.includes('window.mf01smV4History'));
 assert.ok(MAIN_HTML.includes("return'MF01SM4:'+packPlain(historyCache)"),'copy/export must use portable uncompressed payloads');
-assert.ok(MAIN_HTML.includes("a.reuse===q.reuse"),'history reuse must require an unchanged reuse key');
-assert.ok(MAIN_HTML.includes("payload:'mf01sm-v4-record-1'"));
+assert.ok(MAIN_HTML.includes("entry.answers?.[q.reuse]"),'history reuse must use the stable reuse key');
+assert.ok(MAIN_HTML.includes("a.fp===ANSWER_COMPAT[q.reuse]"),'history reuse must also require the item-definition fingerprint');
+assert.ok(MAIN_HTML.includes("HISTORY_FORMAT='mf01sm-v4-history-2'") && MAIN_HTML.includes("ANSWER_COMPAT_FORMAT='mf01sm-v4-answers-1'"));
+assert.ok(!MAIN_HTML.includes('mf01sm-v4-history-1'),'4.0/4.0.1 history is intentionally outside the compatibility baseline');
+assert.ok(MAIN_HTML.includes("payload:'mf01sm-v4-record-2'"));
+assert.ok(!MAIN_HTML.includes('scores._self_report='),'self-report statistics must remain independent from questionnaire scores');
 assert.ok(MAIN_HTML.includes('_item_manifest=QUESTIONS.map'));
 assert.ok(MAIN_HTML.includes('reused_ids:[...state.reusedIds]'));
 for (const text of ['v4 把 0 / 1','reuse key','独立叶片雷达 · v4.x 稳定题目迁移','结果页叶片雷达','非二元认同分只来自','也可在控制台调用','旧版单轴','v4 终于','13–15 岁不会出现四组 16+ 极端娱乐后缀','作答质量 / 回传','统计已回传：','D1','KV fallback']) assert.ok(!MAIN_HTML.includes(text),`developer-facing copy leaked: ${text}`);
@@ -91,14 +97,14 @@ const fullAnswers=answerByKey(5);
 const fullScores=scoreV4Answers(V4_QUESTIONS,fullAnswers,{assignGender:'AMAB'});
 fullScores.response_quality=100;
 fullScores.response_quality_detail={attention_total:2,attention_passed:2,pair_score:100,straightline_ratio:1,duration_ms:123456,ms_per_item:2128,reused_count:58,run_thresholds:{mild:16,mid:22,severe:30}};
-fullScores._self_report={gender_label:'测试',orientation_label:'测试',role01:['0','1']};
 fullScores._item_manifest=V4_QUESTIONS.map(q=>({id:q.id,reuse:q.reuse,key:q.key||null,type:q.type,origin:q.origin||null,attention:q.attention||null}));
-fullScores._record={payload:'mf01sm-v4-record-1',version:V4_VERSION,schema:V4_SCHEMA,question_format:V4_QUESTION_FORMAT,profile:{nickname:'regression',age:16,assignGender:'AMAB',selfGender:'测试',selfOrientation:'测试',selfRole01:['0','1']},history:{source_version:'4.0.1',reused_ids:V4_QUESTIONS.map(q=>q.id)},timing:{started_at:1,finished_at:2,duration_ms:1},client:{language:'zh-CN',timezone:'Asia/Shanghai',viewport:[9999,9999],user_agent:'x'.repeat(320)},location:'31.230400, 121.473700',result:{tag:'test',chips:['a','b'],radar_axes:Object.fromEntries(V4_RADAR_AXES.map(([k])=>[k,fullScores[k]]))}};
+fullScores._record={payload:'mf01sm-v4-record-2',version:V4_VERSION,schema:V4_SCHEMA,question_format:V4_QUESTION_FORMAT,answer_compat:'mf01sm-v4-answers-1',profile:{nickname:'regression',age:16,assignGender:'AMAB'},history:{source_version:'4.0.2',reused_ids:V4_QUESTIONS.map(q=>q.id)},timing:{started_at:1,finished_at:2,duration_ms:1},client:{language:'zh-CN',timezone:'Asia/Shanghai',viewport:[9999,9999],user_agent:'x'.repeat(320)},location:'31.230400, 121.473700',result:{tag:'test',chips:['a','b'],radar_axes:Object.fromEntries(V4_RADAR_AXES.map(([k])=>[k,fullScores[k]]))}};
 const scoreJson=JSON.stringify(fullScores);
 assert.ok(scoreJson.length<180000,`complete score payload must fit runtime bound, got ${scoreJson.length}`);
 let inserted=null,kvWrites=0;
 const env={mf01smsql:{prepare(sql){assert.match(sql,/INSERT INTO records/);return{bind(...values){inserted=values;return{async run(){return{success:true}}}}}}},mf01sm:{async put(){kvWrites++}}};
-const save=await current.fetch(new Request('https://mf01sm.internal/api/save',{method:'POST',headers:{'content-type':'application/json','CF-Connecting-IP':'127.0.0.1'},body:JSON.stringify({version:V4_VERSION,nickname:'regression',age:16,gender:'AMAB',selfGender:'测试',selfOrientation:'测试',selfLikert:{role01:['0','1']},location:'Unavailable',tag:'test',scores:fullScores,timestamp:Date.now()})}),env);
-assert.equal(save.status,200);const saveJson=await save.json();assert.equal(saveJson.d1,true);assert.equal(saveJson.kv,false);assert.equal(kvWrites,0);assert.ok(inserted);const persisted=JSON.parse(inserted[11]);assert.deepEqual(persisted._answers,fullScores._answers,'raw answers must be persisted');assert.deepEqual(persisted._item_manifest,fullScores._item_manifest,'item manifest must be persisted');assert.equal(persisted._record.payload,'mf01sm-v4-record-1');
+const fullSelfStats={_schema:'mf01sm-v4-self-stats-1',gender_identity:0.82,gender_identity_special:null,gender_expression:0.76,sexual_attraction_direction:0.61,sexual_attraction_intensity:0.37,sexual_expression:0.22,romantic_tendency:0.89,relationship_structure:0.18,role01:['0','1']};
+const save=await current.fetch(new Request('https://mf01sm.internal/api/save',{method:'POST',headers:{'content-type':'application/json','CF-Connecting-IP':'127.0.0.1'},body:JSON.stringify({version:V4_VERSION,nickname:'regression',age:16,gender:'AMAB',selfGender:'性别轴:0.820',selfOrientation:'性吸引方向:0.610',selfLikert:fullSelfStats,location:'Unavailable',tag:'test',scores:fullScores,timestamp:Date.now()})}),env);
+assert.equal(save.status,200);const saveJson=await save.json();assert.equal(saveJson.d1,true);assert.equal(saveJson.kv,false);assert.equal(kvWrites,0);assert.ok(inserted);const persistedSelf=JSON.parse(inserted[6]);assert.deepEqual(persistedSelf,fullSelfStats,'independent self-report statistics must be persisted in self_likert');const persisted=JSON.parse(inserted[11]);assert.deepEqual(persisted._answers,fullScores._answers,'raw answers must be persisted separately in scores');assert.deepEqual(persisted._item_manifest,fullScores._item_manifest,'item manifest must be persisted');assert.equal(persisted._record.payload,'mf01sm-v4-record-2');
 
 console.log(`mf01sm v4 regressions passed: ${V4_QUESTIONS.length} responses, 16/56 sensitive-footprint items, independent 0/1 + M/F + S/M + attraction + mono/poly axes, direct nonbinary identity, aesthetic leaf, portable v4.x history, complete D1 payload (${scoreJson.length} chars).`);

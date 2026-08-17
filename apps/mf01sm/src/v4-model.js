@@ -1,9 +1,9 @@
-export const V4_VERSION = '4.0.1';
+export const V4_VERSION = '4.0.2';
 export const V4_SCHEMA = 'mf01sm-v4-independent-leaf';
 export const V4_QUESTION_FORMAT = 'mixed-v4-stable-reuse';
 
-// Stable question ids + reuse keys are the migration contract for v4.x.
-// If wording/meaning/scoring of an item changes, bump its reuse key.
+// 4.0.2 starts the stable v4 answer-compatibility contract.
+// Keep reuse keys stable for unchanged items; changing item semantics must invalidate reuse.
 export const V4_QUESTIONS = [
   // Gender identity: all nonbinary items are self-referential. They do not score generic inclusivity.
   {id:'ga1',reuse:'ga1:1',origin:'v3.8',key:'gender_aligned',pair:'ga',type:'vibe',text:'别人自然按你的出生指派性别来理解你时，这种“默认设定”通常有多贴合？'},
