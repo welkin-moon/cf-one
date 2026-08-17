@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const rootDirectory = path.resolve(scriptDirectory, '..');
 const webDirectory = path.join(rootDirectory, 'apps/web');
-const VERSION = '4.0.0';
+const VERSION = '4.0.1';
 
 function runWrangler(arguments_) {
   return new Promise((resolve, reject) => {
@@ -79,7 +79,7 @@ try {
   const bundlePath = await findJavaScript(outDirectory);
   const source = await readFile(bundlePath, 'utf8');
   const requiredMarkers = [
-    '4.0.0','mf01sm-v4-independent-leaf','mixed-v4-stable-reuse','mf01sm-v4-leaf-history',
+    '4.0.1','mf01sm-v4-independent-leaf','mixed-v4-stable-reuse',
     'mf01sm-v4-record-1','MF01SM4:','window.mf01smV4History','gender_style_masc','gender_style_fem',
     'aesthetic','role0','role1','s_like','m_like','attr_m','attr_f','sexual_expression','romantic_tendency',
     'mono','poly','nonbinary_identity','response_quality_detail','CF-Connecting-IP','payload too large',
@@ -98,7 +98,7 @@ try {
     throw new Error('mf01sm historical bindings are incomplete; refusing to deploy runtime bundle.');
   }
 
-  const message = 'mf01sm v4.0.0 independent leaf scoring, complete stats, blurred flag, and v4.x answer migration';
+  const message = 'mf01sm v4.0.1 frontend copy cleanup';
   const metadata = {
     main_module: 'worker.js',
     compatibility_date: settings?.compatibility_date || '2026-05-07',
@@ -119,7 +119,7 @@ try {
     body: JSON.stringify({strategy:'percentage',versions:[{percentage:100,version_id:version.id}],annotations:{'workers/message':message}})
   });
   if (!deployment?.id) throw new Error('Cloudflare created no mf01sm runtime deployment id.');
-  console.log(`mf01sm v${VERSION} runtime ${version.id} deployed at 100%; independent leaf scoring and v4.x stable-answer migration are live.`);
+  console.log(`mf01sm v${VERSION} runtime ${version.id} deployed at 100%.`);
 } finally {
   await rm(outDirectory, { recursive: true, force: true });
 }
