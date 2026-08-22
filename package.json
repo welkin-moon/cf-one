@@ -11,7 +11,7 @@
     "test:security": "node scripts/security-regressions.mjs && node scripts/storage-regressions.mjs",
     "build:mf01sm": "node scripts/generate-mf01sm-current.mjs",
     "test:mf01sm": "pnpm build:mf01sm && node scripts/mf01sm-regressions.mjs && node scripts/mf01sm-v4-regressions.mjs && node scripts/mf01sm-v405-runtime-regressions.mjs",
-    "check": "pnpm test:security && pnpm test:mf01sm && pnpm typecheck && pnpm --dir apps/web dry-run && pnpm --dir apps/web exec wrangler deploy --dry-run --cwd ../mf01sm --config wrangler.toml --name mf01sm",
+    "check": "pnpm test:security && pnpm test:mf01sm && pnpm typecheck && pnpm --dir apps/web dry-run && pnpm --dir apps/web exec wrangler deploy --dry-run --cwd ../mf01sm --config wrangler.toml --name mf01sm && node scripts/mf01sm-v405-stage-upload.mjs",
     "db:migrate:local": "pnpm --dir apps/web db:migrate:local",
     "db:migrate:remote": "pnpm --dir apps/web db:migrate:remote"
   }
