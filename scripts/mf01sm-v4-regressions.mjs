@@ -8,7 +8,7 @@ import {
 import { MAIN_HTML, ADMIN_HTML } from '../apps/mf01sm/src/current-pages.generated.js';
 import current from '../apps/mf01sm/src/current-runtime.js';
 
-assert.equal(V4_VERSION, '4.0.2');
+assert.equal(V4_VERSION, '4.0.3');
 assert.equal(V4_SCHEMA, 'mf01sm-v4-independent-leaf');
 assert.equal(V4_QUESTION_FORMAT, 'mixed-v4-stable-reuse');
 assert.equal(V4_QUESTIONS.length, 58, 'v4 keeps the 58-response footprint');
@@ -71,6 +71,11 @@ for (const key of ['gender_expression','sexual_attraction_direction','sexual_att
 assert.ok(!MAIN_HTML.includes('id=\"selfRole0\"') && !MAIN_HTML.includes('id=\"selfRole1\"'),'3.8.2 self-report page must not grow questionnaire 0/1 controls');
 assert.ok(MAIN_HTML.includes('flag-haze') && MAIN_HTML.includes('filter:blur(42px)'),'blurred gradient flag must render');
 assert.ok(MAIN_HTML.includes('维度雷达') && MAIN_HTML.includes('radar-leaf'));
+assert.ok(MAIN_HTML.includes('id=\"locationGate\"') && MAIN_HTML.includes('id=\"locationRetry\"'),'location denial must leave a visible retry gate');
+assert.ok(MAIN_HTML.includes('请在有位置信息权限的浏览器中打开，并赋予本站位置权限后重试。'),'location denial copy must tell the user how to recover permission');
+assert.ok(MAIN_HTML.includes("navigator.permissions.query({name:'geolocation'})") && MAIN_HTML.includes("window.addEventListener('focus'"),'location permission changes must be observed for retry');
+assert.ok(MAIN_HTML.includes("const ok=await requestRequiredLocation();if(!ok)return;syncStatsUi();show('baseline');"),'baseline must stay blocked until location succeeds');
+assert.ok(!MAIN_HTML.includes("state.location='Denied'"),'denied location must not silently fall through into the questionnaire');
 assert.ok(MAIN_HTML.includes('<div class=\"result-block\"><h3>自我定位 ↔ 题目画像</h3>'),'comparison card must render as valid HTML');
 assert.ok(!MAIN_HTML.includes('class=\\\"result-block\\\"><h3>自我定位 ↔ 题目画像'),'comparison card must not contain literal generator escapes');
 assert.ok(MAIN_HTML.includes('window.mf01smV4History'));
