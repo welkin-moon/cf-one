@@ -80,7 +80,7 @@ try {
   const source = await readFile(bundlePath, 'utf8');
   const requiredMarkers = [
     '4.0.4','mf01sm-v4-independent-leaf','mixed-v4-stable-reuse',
-    'mf01sm-v4-record-1','MF01SM4:','window.mf01smV4History','gender_style_masc','gender_style_fem',
+    'mf01sm-v4-record-2','MF01SM4:','window.mf01smV4History','gender_style_masc','gender_style_fem',
     'aesthetic','role0','role1','s_like','m_like','attr_m','attr_f','sexual_expression','romantic_tendency',
     'mono','poly','nonbinary_identity','response_quality_detail','CF-Connecting-IP','payload too large',
     'scores too large','self stats too large','mf01sm-v4-self-stats-1','mf01sm-v4-history-2','mf01sm-v4-answers-1','KV Legacy/Fallback','里百合 / 药娘预备役 / 软糯伪娘','爹系狂攻 / 强制爱暴君 / 掌控狂'
