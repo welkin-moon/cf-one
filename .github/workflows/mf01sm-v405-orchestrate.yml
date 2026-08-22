@@ -1,0 +1,48 @@
+name: mf01sm v4.0.5 orchestrate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mf01sm-v405-orchestrate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/mf01sm-v4.0.5-responsive-pride
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply patch
+        run: python3 scripts/.mf01sm-v405-patch.py
+      - name: Verify generated source and repository
+        run: |
+          node --check apps/mf01sm/src/v4-model.js
+          node --check apps/mf01sm/src/current-runtime.js
+          node --check scripts/generate-mf01sm-current.mjs
+          node --check scripts/mf01sm-v4-regressions.mjs
+          node scripts/generate-mf01sm-current.mjs
+          node scripts/mf01sm-v4-regressions.mjs
+          pnpm check
+      - name: Commit clean verified source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add apps/mf01sm/src/v4-model.js apps/mf01sm/src/current-runtime.js scripts/generate-mf01sm-current.mjs scripts/mf01sm-v4-regressions.mjs scripts/deploy-mf01sm-runtime.mjs
+          git rm -f scripts/.mf01sm-v405-patch.py .github/workflows/mf01sm-v405-responsive.yml
+          git commit -m 'Make mf01sm 4.0.5 responsive across result viewports'
+          git push origin HEAD:fix/mf01sm-v4.0.5-responsive-pride
