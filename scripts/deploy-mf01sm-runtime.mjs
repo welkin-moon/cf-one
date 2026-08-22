@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const rootDirectory = path.resolve(scriptDirectory, '..');
 const webDirectory = path.join(rootDirectory, 'apps/web');
-const VERSION = '4.0.2';
+const VERSION = '4.0.3';
 
 function runWrangler(arguments_) {
   return new Promise((resolve, reject) => {
@@ -79,7 +79,7 @@ try {
   const bundlePath = await findJavaScript(outDirectory);
   const source = await readFile(bundlePath, 'utf8');
   const requiredMarkers = [
-    '4.0.2','mf01sm-v4-independent-leaf','mixed-v4-stable-reuse',
+    '4.0.3','mf01sm-v4-independent-leaf','mixed-v4-stable-reuse',
     'mf01sm-v4-record-1','MF01SM4:','window.mf01smV4History','gender_style_masc','gender_style_fem',
     'aesthetic','role0','role1','s_like','m_like','attr_m','attr_f','sexual_expression','romantic_tendency',
     'mono','poly','nonbinary_identity','response_quality_detail','CF-Connecting-IP','payload too large',
@@ -98,7 +98,7 @@ try {
     throw new Error('mf01sm historical bindings are incomplete; refusing to deploy runtime bundle.');
   }
 
-  const message = 'mf01sm v4.0.2 independent self-report stats and stable v4 answer compatibility';
+  const message = 'mf01sm v4.0.3 required geolocation gate with retryable permission recovery';
   const metadata = {
     main_module: 'worker.js',
     compatibility_date: settings?.compatibility_date || '2026-05-07',
