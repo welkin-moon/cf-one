@@ -8,7 +8,7 @@ import {
 import { MAIN_HTML, ADMIN_HTML } from '../apps/mf01sm/src/current-pages.generated.js';
 import current from '../apps/mf01sm/src/current-runtime.js';
 
-assert.equal(V4_VERSION, '4.0.3');
+assert.equal(V4_VERSION, '4.0.4');
 assert.equal(V4_SCHEMA, 'mf01sm-v4-independent-leaf');
 assert.equal(V4_QUESTION_FORMAT, 'mixed-v4-stable-reuse');
 assert.equal(V4_QUESTIONS.length, 58, 'v4 keeps the 58-response footprint');
@@ -62,6 +62,25 @@ r = classifyV4Result({...baseScores,gender_aligned:20,gender_cross:35,nonbinary_
 assert.ok(r.tag.startsWith('第四性 / 电子盆栽 · '),'direct nonbinary identity must take its locked prefix when clearly dominant');
 r = classifyV4Result({...baseScores,attr_m:20,attr_f:20,sexual_expression:100},{assignGender:'AMAB',age:16});
 assert.ok(r.tag.startsWith('纯爱战神 / 戒断圣体 · '),'low attraction classification must not be suppressed by high expression');
+
+// Real 4.0.2 result-page regression from production: AFAB 67/33 identity with 50/50 attraction is aligned + mixed, not straight.
+r = classifyV4Result({...baseScores,gender_aligned:67,gender_cross:33,nonbinary_identity:58,attr_m:50,attr_f:50,role0:60,role1:45,s_like:42,m_like:50,aesthetic:75,mono:75,poly:75},{assignGender:'AFAB',age:16});
+assert.ok(r.tag.startsWith('杂食恶犬 / 荤素不忌 · '),'50/50 mixed attraction must not fall through to 普通顺直女');
+assert.ok(r.tag.endsWith('端水大师 / 薛定谔的XP'));
+assert.ok(r.chips.includes('出生指派方向明显'),'67/33 aligned-vs-cross must not be labelled 性别方向较混合');
+assert.ok(r.chips.includes('吸引方向混合'));
+assert.equal(r.flags.aligned,true);
+assert.equal(r.flags.mixedAttraction,true);
+assert.equal(r.flags.panish,false,'50/50 remains a moderate mixed-attraction result, not the stronger panish flag');
+
+// The former 50/63 gray hole also stays mixed; an unambiguous 75/0 profile remains straight for aligned AFAB.
+r = classifyV4Result({...baseScores,gender_aligned:75,gender_cross:25,attr_m:50,attr_f:63},{assignGender:'AFAB',age:16});
+assert.ok(r.tag.startsWith('杂食恶犬 / 荤素不忌 · '));
+assert.ok(r.chips.includes('吸引方向混合'));
+r = classifyV4Result({...baseScores,gender_aligned:83,gender_cross:42,attr_m:75,attr_f:0},{assignGender:'AFAB',age:16});
+assert.ok(r.tag.startsWith('普通顺直女 · '));
+assert.ok(r.chips.includes('出生指派方向明显'));
+assert.ok(r.chips.includes('偏男吸引'));
 
 for (const tag of LOCKED_TAG_VOCABULARY) assert.ok(MAIN_HTML.includes(tag),`locked vocabulary missing: ${tag}`);
 assert.ok(MAIN_HTML.includes('本机答题记录'));

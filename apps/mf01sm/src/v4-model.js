@@ -1,4 +1,4 @@
-export const V4_VERSION = '4.0.3';
+export const V4_VERSION = '4.0.4';
 export const V4_SCHEMA = 'mf01sm-v4-independent-leaf';
 export const V4_QUESTION_FORMAT = 'mixed-v4-stable-reuse';
 
@@ -148,23 +148,25 @@ export function classifyV4Result(scores, meta = {}) {
   const age = Number(meta.age || 0);
   const smEligible = age >= 16;
   const attM = Number(scores.attr_m || 0), attF = Number(scores.attr_f || 0);
-  const panish = attM >= 56 && attF >= 56 && Math.abs(attM - attF) <= 18;
+  const attractionGap = Math.abs(attM - attF);
   const aceish = Math.max(attM, attF) <= 34;
-  const cross = Number(scores.gender_cross || 0) >= 64 && Number(scores.gender_cross || 0) - Number(scores.gender_aligned || 0) >= 14;
-  const agender = Number(scores.nonbinary_identity || 0) >= 76 && Number(scores.nonbinary_identity || 0) >= Math.max(Number(scores.gender_aligned || 0), Number(scores.gender_cross || 0)) + 8;
+  const mixedAttraction = !aceish && attractionGap <= 18;
+  const panish = mixedAttraction && attM >= 56 && attF >= 56;
+  const alignedScore = Number(scores.gender_aligned || 0), crossScore = Number(scores.gender_cross || 0);
+  const aligned = alignedScore >= 64 && alignedScore - crossScore >= 14;
+  const cross = crossScore >= 64 && crossScore - alignedScore >= 14;
+  const agender = Number(scores.nonbinary_identity || 0) >= 76 && Number(scores.nonbinary_identity || 0) >= Math.max(alignedScore, crossScore) + 8;
 
   let left;
   if (agender) left = '第四性 / 电子盆栽';
   else if (cross && amab) left = attM >= attF + 18 ? '软糯小蓝梁 / 蓝梁诱捕器' : '里百合 / 药娘预备役 / 软糯伪娘';
   else if (cross && !amab) left = attF >= attM + 18 ? '铁T / 姬圈老保' : '√-16先锋 / 腐改跨';
   else if (aceish) left = '纯爱战神 / 戒断圣体';
-  else if (panish) left = '杂食恶犬 / 荤素不忌';
-  else if (amab && attM >= 50 && attM >= attF + 18) left = '击剑爱好者 / 哇是成都人';
-  else if (!amab && attF >= 50 && attF >= attM + 18) left = '柑橘味香女 / 兰州特产';
-  else if (amab && attF >= attM) left = '平平无奇顺直男';
-  else if (!amab && attM >= attF) left = '普通顺直女';
-  else if (amab) left = '击剑爱好者 / 哇是成都人';
-  else left = '柑橘味香女 / 兰州特产';
+  else if (mixedAttraction) left = '杂食恶犬 / 荤素不忌';
+  else if (amab && attM > attF) left = '击剑爱好者 / 哇是成都人';
+  else if (!amab && attF > attM) left = '柑橘味香女 / 兰州特产';
+  else if (amab) left = '平平无奇顺直男';
+  else left = '普通顺直女';
 
   const z = Number(scores.role0 || 0), o = Number(scores.role1 || 0), sl = Number(scores.s_like || 0), ml = Number(scores.m_like || 0);
   const active = o >= 72 && o >= z + 12;
@@ -194,7 +196,7 @@ export function classifyV4Result(scores, meta = {}) {
   else right = '端水大师 / 薛定谔的XP';
 
   const chips = [];
-  chips.push(agender ? '非二元认同高' : cross ? '跨指派倾向明显' : '性别方向较混合');
+  chips.push(agender ? '非二元认同高' : cross ? '跨指派倾向明显' : aligned ? '出生指派方向明显' : '性别方向较混合');
   chips.push(panish ? '双向吸引' : aceish ? '低吸引频段' : attM >= attF + 18 ? '偏男吸引' : attF >= attM + 18 ? '偏女吸引' : '吸引方向混合');
   chips.push(o >= 68 && z >= 68 ? '0/1双高' : o >= 68 ? '1偏高' : z >= 68 ? '0偏高' : '0/1可切换');
   chips.push(Number(scores.aesthetic || 0) >= 68 ? '审美雷达强' : Number(scores.aesthetic || 0) <= 32 ? '审美低干扰' : '审美中频');
@@ -204,8 +206,8 @@ export function classifyV4Result(scores, meta = {}) {
   let flag = 'linear-gradient(135deg,#6d5dfc 0%,#e2c7ff 28%,#ffffff 50%,#ffc6dd 72%,#6dc8ff 100%)';
   if (agender) flag = 'linear-gradient(135deg,#111 0%,#777 25%,#fff 45%,#8c63ff 72%,#f5df4d 100%)';
   else if (cross) flag = 'linear-gradient(135deg,#5bcefa 0%,#f5a9b8 28%,#fff 50%,#f5a9b8 72%,#5bcefa 100%)';
-  else if (panish) flag = 'linear-gradient(135deg,#d60270 0%,#9b4f96 50%,#0038a8 100%)';
+  else if (mixedAttraction) flag = 'linear-gradient(135deg,#d60270 0%,#9b4f96 50%,#0038a8 100%)';
   else if (aceish) flag = 'linear-gradient(135deg,#111 0%,#9a9a9a 30%,#fff 55%,#7c3aed 100%)';
 
-  return { tag: `${left} · ${right}`, left, right, chips, flag, flags: {agender,cross,panish,aceish,smEligible} };
+  return { tag: `${left} · ${right}`, left, right, chips, flag, flags: {agender,aligned,cross,mixedAttraction,panish,aceish,smEligible} };
 }

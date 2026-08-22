@@ -1,6 +1,6 @@
 import { MAIN_HTML, ADMIN_HTML } from './current-pages.generated.js';
 
-const VERSION = '4.0.3';
+const VERSION = '4.0.4';
 const MAX_BODY_CHARS = 384000;
 const MAX_SCORES_CHARS = 180000;
 const MAX_SELF_STATS_CHARS = 24000;
