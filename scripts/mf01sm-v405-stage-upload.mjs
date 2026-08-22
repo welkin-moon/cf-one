@@ -13,7 +13,6 @@ function run(cmd,args,cwd){return new Promise((resolve,reject)=>{const p=spawn(c
 async function findJs(dir){const out=[];async function walk(d){for(const e of await readdir(d,{withFileTypes:true})){const f=path.join(d,e.name);if(e.isDirectory())await walk(f);else if(e.isFile()&&e.name.endsWith('.js'))out.push(f);}}await walk(dir);if(out.length!==1)throw new Error(`expected one Worker JS, got ${out.length}: ${out.join(', ')}`);return out[0];}
 
 try {
-  await run('git',['merge-base','--is-ancestor','5ad315fe623baa4b18bb38c4fe0694fd39d9ab90','HEAD'],root);
   await run('pnpm',['exec','wrangler','deploy','--dry-run','--cwd','../mf01sm','--config','wrangler.toml','--name','mf01sm','--outdir',out],web);
   const file=await findJs(out);
   const body=await readFile(file);
