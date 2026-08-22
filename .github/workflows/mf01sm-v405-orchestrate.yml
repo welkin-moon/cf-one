@@ -46,3 +46,5 @@ jobs:
           git rm -f scripts/.mf01sm-v405-patch.py .github/workflows/mf01sm-v405-responsive.yml
           git commit -m 'Make mf01sm 4.0.5 responsive across result viewports'
           git push origin HEAD:fix/mf01sm-v4.0.5-responsive-pride
+
+# second push intentionally triggers this workflow after it exists on the default branch
