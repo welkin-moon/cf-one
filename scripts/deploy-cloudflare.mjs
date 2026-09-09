@@ -95,47 +95,61 @@ async function repairControlDns() {
   const zoneName = '20100823.xyz';
   const sourceName = 'cxl-browser.20100823.xyz';
   const targetName = 'browser-agent.20100823.xyz';
-  const zones = await api(`/zones?name=${encodeURIComponent(zoneName)}&account.id=${encodeURIComponent(accountId)}&per_page=50`);
+  const zones = await api(`/zones?name=${encodeURIComponent(zoneName)}&per_page=50`);
   const zone = Array.isArray(zones) ? zones.find(entry => String(entry?.name ?? '').toLowerCase() === zoneName) : null;
-  if (!zone?.id) throw new Error(`Control DNS recovery could not resolve zone ${zoneName}.`);
+  if (!zone?.id) throw new Error(`zone_not_found:${zoneName}`);
 
-  async function exactRecord(name) {
+  async function recordsFor(name) {
     const records = await api(`/zones/${zone.id}/dns_records?name=${encodeURIComponent(name)}&per_page=100`);
-    const exact = Array.isArray(records)
+    return Array.isArray(records)
       ? records.filter(record => String(record?.name ?? '').toLowerCase() === name)
       : [];
-    if (exact.length !== 1) throw new Error(`Control DNS recovery expected exactly one record for ${name}, found ${exact.length}.`);
-    return exact[0];
   }
 
-  const source = await exactRecord(sourceName);
-  const target = await exactRecord(targetName);
-  if (source.type !== 'CNAME') throw new Error(`Control DNS recovery expected ${sourceName} to be CNAME, found ${source.type}.`);
-  if (target.type !== 'CNAME') throw new Error(`Control DNS recovery expected ${targetName} to be CNAME, found ${target.type}.`);
+  const sources = await recordsFor(sourceName);
+  if (sources.length < 1) throw new Error(`source_dns_missing:${sourceName}`);
+  const source = sources[0];
+  if (!source?.type || !source?.content) throw new Error(`source_dns_invalid:${sourceName}`);
 
-  const alreadyAligned = target.content === source.content && target.proxied === source.proxied;
-  if (alreadyAligned) {
+  const targets = await recordsFor(targetName);
+  const target = targets[0] ?? null;
+  const desired = {
+    type: source.type,
+    name: targetName,
+    content: source.content,
+    proxied: Boolean(source.proxied),
+    ttl: source.ttl || 1
+  };
+
+  if (!target) {
+    await api(`/zones/${zone.id}/dns_records`, {
+      method: 'POST',
+      body: JSON.stringify(desired)
+    });
+    console.log(`Control DNS recovery: created ${targetName} from ${sourceName}.`);
+    return;
+  }
+
+  if (target.type === desired.type && target.content === desired.content && Boolean(target.proxied) === desired.proxied) {
     console.log('Control DNS recovery: browser-agent already matches cxl-browser.');
     return;
   }
 
   await api(`/zones/${zone.id}/dns_records/${target.id}`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      type: 'CNAME',
-      name: targetName,
-      content: source.content,
-      proxied: source.proxied,
-      ttl: source.ttl || 1
-    })
+    method: 'PUT',
+    body: JSON.stringify(desired)
   });
-  console.log(`Control DNS recovery: aligned ${targetName} to the live cxl-browser tunnel DNS target.`);
+  console.log(`Control DNS recovery: aligned ${targetName} to ${sourceName}.`);
 }
 
 await run(['d1', 'migrations', 'apply', process.env.CF_ONE_D1_NAME?.trim() || 'cf-one', '--remote', '--config', 'wrangler.generated.jsonc']);
 const generatedConfig = JSON.parse(await readFile(outputPath, 'utf8'));
 await reconcileMirrorDomains(generatedConfig);
-await repairControlDns();
+try {
+  await repairControlDns();
+} catch (error) {
+  console.warn(`Control DNS recovery skipped: ${error instanceof Error ? error.message : String(error)}`);
+}
 
 // mf01sm is intentionally NOT uploaded here. v3.8 has one authoritative deployment path:
 // scripts/deploy-mf01sm-runtime.mjs. This removes the old intermediate core version/deployment
