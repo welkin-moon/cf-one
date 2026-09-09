@@ -91,9 +91,51 @@ async function reconcileMirrorDomains(config) {
   console.log(`Mirror-domain reconciliation complete: ${active.length} active, ${repaired} repaired.`);
 }
 
+async function repairControlDns() {
+  const zoneName = '20100823.xyz';
+  const sourceName = 'cxl-browser.20100823.xyz';
+  const targetName = 'browser-agent.20100823.xyz';
+  const zones = await api(`/zones?name=${encodeURIComponent(zoneName)}&account.id=${encodeURIComponent(accountId)}&per_page=50`);
+  const zone = Array.isArray(zones) ? zones.find(entry => String(entry?.name ?? '').toLowerCase() === zoneName) : null;
+  if (!zone?.id) throw new Error(`Control DNS recovery could not resolve zone ${zoneName}.`);
+
+  async function exactRecord(name) {
+    const records = await api(`/zones/${zone.id}/dns_records?name=${encodeURIComponent(name)}&per_page=100`);
+    const exact = Array.isArray(records)
+      ? records.filter(record => String(record?.name ?? '').toLowerCase() === name)
+      : [];
+    if (exact.length !== 1) throw new Error(`Control DNS recovery expected exactly one record for ${name}, found ${exact.length}.`);
+    return exact[0];
+  }
+
+  const source = await exactRecord(sourceName);
+  const target = await exactRecord(targetName);
+  if (source.type !== 'CNAME') throw new Error(`Control DNS recovery expected ${sourceName} to be CNAME, found ${source.type}.`);
+  if (target.type !== 'CNAME') throw new Error(`Control DNS recovery expected ${targetName} to be CNAME, found ${target.type}.`);
+
+  const alreadyAligned = target.content === source.content && target.proxied === source.proxied;
+  if (alreadyAligned) {
+    console.log('Control DNS recovery: browser-agent already matches cxl-browser.');
+    return;
+  }
+
+  await api(`/zones/${zone.id}/dns_records/${target.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      type: 'CNAME',
+      name: targetName,
+      content: source.content,
+      proxied: source.proxied,
+      ttl: source.ttl || 1
+    })
+  });
+  console.log(`Control DNS recovery: aligned ${targetName} to the live cxl-browser tunnel DNS target.`);
+}
+
 await run(['d1', 'migrations', 'apply', process.env.CF_ONE_D1_NAME?.trim() || 'cf-one', '--remote', '--config', 'wrangler.generated.jsonc']);
 const generatedConfig = JSON.parse(await readFile(outputPath, 'utf8'));
 await reconcileMirrorDomains(generatedConfig);
+await repairControlDns();
 
 // mf01sm is intentionally NOT uploaded here. v3.8 has one authoritative deployment path:
 // scripts/deploy-mf01sm-runtime.mjs. This removes the old intermediate core version/deployment
