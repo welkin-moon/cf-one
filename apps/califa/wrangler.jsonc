@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "califa-web-core",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-05",
+  "workers_dev": true,
+  "vars": {
+    "CALIFA_ROLE": "user",
+    "CALIFA_NETWORK": "califa-dev",
+    "CALIFA_NODE_NAME": "Califa development node"
+  },
+  "triggers": {
+    "crons": ["*/10 * * * *"]
+  }
+}
