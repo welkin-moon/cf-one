@@ -90,7 +90,7 @@ export async function adminRoutes(request: Request, env: Env, path: string): Pro
       FROM invitation_codes i
       LEFT JOIN users u ON u.id = i.created_by
       ORDER BY i.created_at DESC LIMIT 500`).all();
-    return json({ invites: result.results, legacyInviteEnabled: Boolean(env.INVITE_CODE) });
+    return json({ invites: result.results });
   }
 
   if (path === '/api/admin/invites' && request.method === 'POST') {
