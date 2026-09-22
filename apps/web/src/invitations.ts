@@ -7,7 +7,7 @@ function base64Url(bytes: Uint8Array): string {
 }
 
 export function newInvitationCode(): string {
-  return `LMS-${base64Url(crypto.getRandomValues(new Uint8Array(18))) }`;
+  return `LMS-${base64Url(crypto.getRandomValues(new Uint8Array(18)))}`;
 }
 
 export async function invitationCodeHash(code: string): Promise<string> {
