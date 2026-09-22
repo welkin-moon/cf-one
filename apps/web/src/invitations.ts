@@ -15,17 +15,20 @@ export async function invitationCodeHash(code: string): Promise<string> {
   return Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export async function consumeInvitationCode(env: Env, code: string): Promise<string | null> {
+export async function consumeInvitationCode(env: Env, code: string, email?: string, requireBound = false): Promise<string | null> {
   const normalized = code.trim();
   if (!normalized || normalized.length > 160) return null;
   const hash = await invitationCodeHash(normalized);
+  const normalizedEmail = email?.trim().toLowerCase() ?? '';
   const row = await env.DB.prepare(`UPDATE invitation_codes
     SET use_count = use_count + 1, last_used_at = CURRENT_TIMESTAMP
     WHERE code_hash = ?1
       AND status = 'active'
       AND use_count < max_uses
       AND (expires_at IS NULL OR expires_at > unixepoch())
-    RETURNING id`).bind(hash).first<{ id: string }>();
+      AND (?2 = 0 OR bound_email IS NOT NULL)
+      AND (bound_email IS NULL OR lower(bound_email) = ?3)
+    RETURNING id`).bind(hash, requireBound ? 1 : 0, normalizedEmail).first<{ id: string }>();
   return row?.id ?? null;
 }
 
