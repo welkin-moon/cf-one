@@ -120,7 +120,7 @@ export async function adminRoutes(request: Request, env: Env, path: string): Pro
   }
 
   if (path === '/api/admin/invites' && request.method === 'GET') {
-    const result = await env.DB.prepare(`SELECT i.id, i.code_prefix, i.note, i.max_uses, i.use_count, i.expires_at,
+    const result = await env.DB.prepare(`SELECT i.id, i.code_prefix, i.note, i.max_uses, i.use_count, i.expires_at, i.bound_email,
       i.status, i.created_at, i.last_used_at, u.display_name AS created_by_name, u.email AS created_by_email
       FROM invitation_codes i
       LEFT JOIN users u ON u.id = i.created_by
@@ -197,8 +197,137 @@ export async function adminRoutes(request: Request, env: Env, path: string): Pro
     return json({ ok: true });
   }
 
+  if (path === '/api/admin/settings/registration' && request.method === 'GET') {
+    const setting = await env.DB.prepare("SELECT value, updated_at FROM site_settings WHERE key = 'registration_open'").first<{ value: string; updated_at: string }>();
+    return json({ open: setting?.value !== '0', updatedAt: setting?.updated_at ?? null });
+  }
+
+  if (path === '/api/admin/settings/registration' && request.method === 'PUT') {
+    requireCsrf(request, session);
+    ownerOnly(session);
+    const body = await readJson<{ open?: unknown }>(request);
+    if (typeof body.open !== 'boolean') throw new HttpError(400, 'open must be boolean');
+    await env.DB.prepare(`INSERT INTO site_settings (key, value, updated_by, updated_at)
+      VALUES ('registration_open', ?1, ?2, CURRENT_TIMESTAMP)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = CURRENT_TIMESTAMP`)
+      .bind(body.open ? '1' : '0', session.sub).run();
+    await audit(env, session, 'registration.update', body.open ? 'open' : 'closed');
+    return json({ ok: true, open: body.open });
+  }
+
+  if (path === '/api/admin/audit' && request.method === 'GET') {
+    ownerOnly(session);
+    const params = new URL(request.url).searchParams;
+    const query = (params.get('q') ?? '').trim().slice(0, 120);
+    const pattern = `%${query.replace(/[%_]/g, '')}%`;
+    const result = query
+      ? await env.DB.prepare(`SELECT a.id, a.actor_id, a.action, a.target, a.created_at,
+          u.display_name AS actor_name, u.email AS actor_email
+          FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id
+          WHERE a.action LIKE ?1 OR COALESCE(a.target, '') LIKE ?1 OR COALESCE(u.email, '') LIKE ?1
+          ORDER BY a.id DESC LIMIT 300`).bind(pattern).all()
+      : await env.DB.prepare(`SELECT a.id, a.actor_id, a.action, a.target, a.created_at,
+          u.display_name AS actor_name, u.email AS actor_email
+          FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id
+          ORDER BY a.id DESC LIMIT 300`).all();
+    return json({ entries: result.results });
+  }
+
+  if (path === '/api/admin/users' && request.method === 'POST') {
+    requireCsrf(request, session);
+    const body = await readJson<{ email?: unknown; displayName?: unknown }>(request);
+    const email = text(body.email).trim().toLowerCase();
+    const displayName = text(body.displayName).trim();
+    if (!validEmail(email)) throw new HttpError(400, 'valid email required');
+    if (!displayName || displayName.length > 60) throw new HttpError(400, 'display name must be 1-60 characters');
+    const existing = await env.DB.prepare('SELECT id FROM users WHERE lower(email) = lower(?1)').bind(email).first<{ id: string }>();
+    if (existing) throw new HttpError(409, 'email already exists');
+    const id = crypto.randomUUID();
+    await env.DB.prepare(`INSERT INTO users (id, email, display_name, role, status, must_change_password)
+      VALUES (?1, ?2, ?3, 'member', 'active', 1)`).bind(id, email, displayName).run();
+    let invite: { id: string; code: string; expiresAt: number };
+    try {
+      invite = await createBoundInvite(env, session, email, `账号初始化：${displayName}`, 7);
+    } catch (error) {
+      await env.DB.prepare('DELETE FROM users WHERE id = ?1').bind(id).run().catch(() => {});
+      throw error;
+    }
+    await audit(env, session, 'user.create', id);
+    return json({ user: { id, email, displayName }, setup: { code: invite.code, expiresAt: invite.expiresAt } }, 201);
+  }
+
+  if (path === '/api/admin/users/bulk' && request.method === 'POST') {
+    requireCsrf(request, session);
+    const body = await readJson<{ userIds?: unknown; action?: unknown }>(request);
+    const ids = Array.isArray(body.userIds) ? [...new Set(body.userIds.filter(value => typeof value === 'string' && /^[0-9A-Za-z-]{1,128}$/.test(value)))].slice(0, 100) as string[] : [];
+    const action = text(body.action);
+    if (!ids.length) throw new HttpError(400, 'no users selected');
+    if (!['enable', 'disable', 'promote', 'demote', 'delete'].includes(action)) throw new HttpError(400, 'invalid bulk action');
+    if (['promote', 'demote', 'delete'].includes(action)) ownerOnly(session);
+    const targets = [];
+    for (const id of ids) targets.push(await manageableUser(env, session, id));
+    if (action === 'delete') {
+      for (const target of targets) await softDeleteUser(env, target.id);
+    } else {
+      const statements = targets.map(target => {
+        if (action === 'enable') return env.DB.prepare("UPDATE users SET status = 'active' WHERE id = ?1").bind(target.id);
+        if (action === 'disable') return env.DB.prepare("UPDATE users SET status = 'disabled', session_epoch = session_epoch + 1 WHERE id = ?1").bind(target.id);
+        if (action === 'promote') return env.DB.prepare("UPDATE users SET role = 'admin' WHERE id = ?1").bind(target.id);
+        return env.DB.prepare("UPDATE users SET role = 'member' WHERE id = ?1").bind(target.id);
+      });
+      if (statements.length) await env.DB.batch(statements);
+      if (action === 'disable') await env.DB.batch(targets.map(target => env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(target.id)));
+    }
+    await audit(env, session, 'user.bulk.' + action, ids.join(','));
+    return json({ ok: true, count: targets.length });
+  }
+
+  const userActionMatch = path.match(/^\/api\/admin\/users\/([0-9A-Za-z-]{1,128})\/(reset-password|logout-all)$/);
+  if (userActionMatch && request.method === 'POST') {
+    requireCsrf(request, session);
+    const userId = userActionMatch[1]!;
+    const action = userActionMatch[2]!;
+    const target = await manageableUser(env, session, userId);
+    if (action === 'logout-all') {
+      await env.DB.batch([
+        env.DB.prepare('UPDATE users SET session_epoch = session_epoch + 1 WHERE id = ?1').bind(userId),
+        env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(userId)
+      ]);
+      await audit(env, session, 'user.logout-all', userId);
+      return json({ ok: true });
+    }
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE users SET credential_salt = NULL, credential_box = NULL, credential_iterations = NULL,
+        must_change_password = 1, session_epoch = session_epoch + 1 WHERE id = ?1`).bind(userId),
+      env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(userId),
+      env.DB.prepare("UPDATE invitation_codes SET status = 'revoked' WHERE bound_email = ?1 AND status = 'active'").bind(target.email.toLowerCase())
+    ]);
+    const invite = await createBoundInvite(env, session, target.email, '密码重置', 1);
+    await audit(env, session, 'user.password-reset', userId);
+    return json({ ok: true, setup: { code: invite.code, expiresAt: invite.expiresAt, email: target.email } });
+  }
+
+  const devicesMatch = path.match(/^\/api\/admin\/users\/([0-9A-Za-z-]{1,128})\/devices$/);
+  if (devicesMatch && request.method === 'GET') {
+    const target = await manageableUser(env, session, devicesMatch[1]!);
+    const result = await env.DB.prepare(`SELECT device_hash, first_seen_at, last_seen_at
+      FROM devices WHERE user_id = ?1 ORDER BY last_seen_at DESC LIMIT 100`).bind(target.id).all();
+    return json({ devices: result.results });
+  }
+
+  const deviceMatch = path.match(/^\/api\/admin\/users\/([0-9A-Za-z-]{1,128})\/devices\/([A-Za-z0-9_-]{22})$/);
+  if (deviceMatch && request.method === 'DELETE') {
+    requireCsrf(request, session);
+    const target = await manageableUser(env, session, deviceMatch[1]!);
+    await env.DB.prepare('DELETE FROM devices WHERE user_id = ?1 AND device_hash = ?2').bind(target.id, deviceMatch[2]!).run();
+    await audit(env, session, 'user.device-revoke', `${target.id}:${deviceMatch[2]}`);
+    return json({ ok: true });
+  }
+
   if (path === '/api/admin/users' && request.method === 'GET') {
     const result = await env.DB.prepare(`SELECT id, email, display_name, role, status, created_at, last_login_at, deleted_at,
+      must_change_password, session_epoch,
+      (SELECT COUNT(*) FROM devices d WHERE d.user_id = users.id) AS device_count,
       CASE WHEN id = 'owner' THEN 1 ELSE 0 END AS owner
       FROM users ORDER BY owner DESC, deleted_at IS NOT NULL, created_at ASC LIMIT 500`).all();
     return json({ users: result.results });
@@ -208,15 +337,12 @@ export async function adminRoutes(request: Request, env: Env, path: string): Pro
   if (userMatch && request.method === 'PATCH') {
     requireCsrf(request, session);
     const userId = userMatch[1]!;
-    if (userId === 'owner') throw new HttpError(403, 'owner identity cannot be modified');
-    if (!isOwner(session) && userId === session.sub) throw new HttpError(403, 'administrators cannot modify their own account');
-    const target = await env.DB.prepare('SELECT role, deleted_at FROM users WHERE id = ?1').bind(userId).first<{ role: 'member' | 'admin'; deleted_at: string | null }>();
-    if (!target) throw new HttpError(404, 'user not found');
-    if (target.deleted_at) throw new HttpError(409, 'deleted account cannot be modified');
+    const target = await manageableUser(env, session, userId);
     const body = await readJson<{ role?: unknown; status?: unknown; displayName?: unknown }>(request);
-    if (!isOwner(session) && (target.role === 'admin' || body.role !== undefined)) throw new HttpError(403, 'site owner required to modify administrators');
+    if (!isOwner(session) && body.role !== undefined) throw new HttpError(403, 'site owner required to modify administrators');
     const updates: string[] = [];
     const values: unknown[] = [];
+    let disables = false;
     if (body.displayName !== undefined) {
       const displayName = text(body.displayName).trim();
       if (!displayName || displayName.length > 60) throw new HttpError(400, 'display name must be 1-60 characters');
@@ -232,10 +358,12 @@ export async function adminRoutes(request: Request, env: Env, path: string): Pro
       if (body.status !== 'active' && body.status !== 'disabled') throw new HttpError(400, 'status must be active or disabled');
       values.push(body.status);
       updates.push(`status = ?${values.length}`);
+      if (body.status === 'disabled') { updates.push('session_epoch = session_epoch + 1'); disables = true; }
     }
     if (!updates.length) throw new HttpError(400, 'no user fields supplied');
     values.push(userId);
     await env.DB.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?${values.length}`).bind(...values).run();
+    if (disables) await env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(userId).run();
     await audit(env, session, 'user.update', userId);
     return json({ ok: true });
   }
@@ -244,17 +372,8 @@ export async function adminRoutes(request: Request, env: Env, path: string): Pro
     requireCsrf(request, session);
     ownerOnly(session);
     const userId = userMatch[1]!;
-    if (userId === 'owner' || userId === session.sub) throw new HttpError(403, 'owner identity cannot be deleted');
-    const target = await env.DB.prepare('SELECT id, deleted_at FROM users WHERE id = ?1').bind(userId).first<{ id: string; deleted_at: string | null }>();
-    if (!target) throw new HttpError(404, 'user not found');
-    if (target.deleted_at) return json({ ok: true });
-    const tombstoneEmail = `deleted+${userId.toLowerCase()}@invalid.local`;
-    await env.DB.batch([
-      env.DB.prepare(`UPDATE users SET email = ?1, display_name = '已删除用户', username = NULL, role = 'member',
-        status = 'disabled', credential_salt = NULL, credential_box = NULL, credential_iterations = NULL,
-        must_change_password = 0, deleted_at = CURRENT_TIMESTAMP WHERE id = ?2`).bind(tombstoneEmail, userId),
-      env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(userId)
-    ]);
+    await manageableUser(env, session, userId);
+    await softDeleteUser(env, userId);
     await audit(env, session, 'user.delete', userId);
     return json({ ok: true });
   }
