@@ -55,6 +55,7 @@ export interface SessionUser {
   id: string;
   email: string;
   role: 'member' | 'admin';
+  sessionEpoch?: number;
 }
 
 function buffer(bytes: Uint8Array): ArrayBuffer {
@@ -118,7 +119,8 @@ export async function issueSession(user: SessionUser, env: Env, request: Request
     role: user.role,
     exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 14,
     device: await deviceSignal(request, env),
-    csrf: randomToken(24)
+    csrf: randomToken(24),
+    epoch: user.sessionEpoch ?? 0
   };
   const encoded = base64url(encoder.encode(JSON.stringify(payload)));
   return `${encoded}.${await hmac(env.SESSION_SECRET, encoded)}`;
@@ -132,7 +134,8 @@ function validSession(value: unknown): value is Session {
     (session.role === 'member' || session.role === 'admin') &&
     typeof session.exp === 'number' && Number.isSafeInteger(session.exp) &&
     typeof session.device === 'string' && /^[A-Za-z0-9_-]{22}$/.test(session.device) &&
-    typeof session.csrf === 'string' && /^[A-Za-z0-9_-]{32}$/.test(session.csrf);
+    typeof session.csrf === 'string' && /^[A-Za-z0-9_-]{32}$/.test(session.csrf) &&
+    (session.epoch === undefined || (typeof session.epoch === 'number' && Number.isSafeInteger(session.epoch) && session.epoch >= 0));
 }
 
 export async function readSession(request: Request, env: Env): Promise<Session | null> {
@@ -163,10 +166,14 @@ export async function currentSession(request: Request, env: Env): Promise<Sessio
   // Browser client-hint headers can legitimately change between requests. Treat the device
   // signal as advisory rather than invalidating a correctly signed session.
   if (isOwner(session)) return { ...session, role: 'admin' };
-  const user = await env.DB.prepare(`SELECT email, role, status FROM users WHERE id = ?1`)
-    .bind(session.sub).first<{ email: string; role: 'member' | 'admin'; status: 'active' | 'disabled' }>();
+  const user = await env.DB.prepare(`SELECT email, role, status, session_epoch FROM users WHERE id = ?1`)
+    .bind(session.sub).first<{ email: string; role: 'member' | 'admin'; status: 'active' | 'disabled'; session_epoch: number }>();
   if (!user || user.status !== 'active' || user.email.toLowerCase() !== session.email.toLowerCase()) return null;
-  return { ...session, email: user.email.toLowerCase(), role: user.role };
+  if ((session.epoch ?? 0) !== user.session_epoch) return null;
+  const device = await env.DB.prepare('SELECT 1 AS ok FROM devices WHERE user_id = ?1 AND device_hash = ?2')
+    .bind(session.sub, session.device).first<{ ok: number }>();
+  if (!device) return null;
+  return { ...session, email: user.email.toLowerCase(), role: user.role, epoch: user.session_epoch };
 }
 
 export async function requireSession(request: Request, env: Env): Promise<Session> {
