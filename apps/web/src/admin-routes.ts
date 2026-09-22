@@ -47,6 +47,41 @@ async function audit(env: Env, session: Session, action: string, target: string)
     .bind(session.sub, action, target).run();
 }
 
+function validEmail(value: string): boolean {
+  return value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+async function createBoundInvite(env: Env, session: Session, email: string, note: string, expiresInDays: number): Promise<{ id: string; code: string; expiresAt: number }> {
+  const code = newInvitationCode();
+  const id = crypto.randomUUID();
+  const expiresAt = Math.floor(Date.now() / 1000) + expiresInDays * 86400;
+  await env.DB.prepare(`INSERT INTO invitation_codes
+    (id, code_hash, code_prefix, note, created_by, max_uses, expires_at, bound_email)
+    VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7)`)
+    .bind(id, await invitationCodeHash(code), code.slice(0, 12), note, session.sub, expiresAt, email.toLowerCase()).run();
+  return { id, code, expiresAt };
+}
+
+async function manageableUser(env: Env, session: Session, userId: string): Promise<{ id: string; email: string; role: 'member' | 'admin'; deleted_at: string | null }> {
+  if (userId === 'owner' || userId === session.sub) throw new HttpError(403, 'this account cannot be managed here');
+  const target = await env.DB.prepare('SELECT id, email, role, deleted_at FROM users WHERE id = ?1')
+    .bind(userId).first<{ id: string; email: string; role: 'member' | 'admin'; deleted_at: string | null }>();
+  if (!target) throw new HttpError(404, 'user not found');
+  if (target.deleted_at) throw new HttpError(409, 'deleted account cannot be modified');
+  if (!isOwner(session) && target.role === 'admin') throw new HttpError(403, 'site owner required to modify administrators');
+  return target;
+}
+
+async function softDeleteUser(env: Env, userId: string): Promise<void> {
+  const tombstoneEmail = `deleted+${userId.toLowerCase()}@invalid.local`;
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE users SET email = ?1, display_name = '已删除用户', username = NULL, role = 'member',
+      status = 'disabled', credential_salt = NULL, credential_box = NULL, credential_iterations = NULL,
+      must_change_password = 0, session_epoch = session_epoch + 1, deleted_at = CURRENT_TIMESTAMP WHERE id = ?2`).bind(tombstoneEmail, userId),
+    env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(userId)
+  ]);
+}
+
 function ownerOnly(session: Session): void {
   if (!isOwner(session)) throw new HttpError(403, 'site owner required');
 }
