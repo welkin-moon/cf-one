@@ -119,8 +119,7 @@ export async function authRoutes(request: Request, env: Env, path: string): Prom
       if (!constantTimeEqual(await verifierProof(registrationVerifier, challenge.challenge), proof)) throw new HttpError(403, 'invalid registration proof');
 
       const inviteId = await consumeInvitationCode(env, inviteCode);
-      const legacyInvite = !inviteId && Boolean(env.INVITE_CODE) && constantTimeEqual(inviteCode, env.INVITE_CODE);
-      if (!inviteId && !legacyInvite) throw new HttpError(403, 'invalid or expired invite code');
+      if (!inviteId) throw new HttpError(403, 'invalid or expired invite code');
 
       try {
         const credentialBox = await sealVerifier(registrationVerifier, env);
