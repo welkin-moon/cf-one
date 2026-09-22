@@ -184,6 +184,10 @@ async function rewriteUrl(
   try {
     const resolved = new URL(value, upstream);
     if (resolved.origin === configuredOrigin.origin) return `${mirrorOrigin}${resolved.pathname}${resolved.search}${resolved.hash}`;
+    if (resolved.origin === upstream.origin && upstream.origin !== configuredOrigin.origin) {
+      if (!isRelayableUrl(resolved)) return value;
+      return `${await relayBase(env, row, resolved.origin, mirrorOrigin, cache)}${resolved.pathname}${resolved.search}${resolved.hash}`;
+    }
     if (!relayExternal || !isRelayableUrl(resolved)) return value;
     return `${await relayBase(env, row, resolved.origin, mirrorOrigin, cache)}${resolved.pathname}${resolved.search}${resolved.hash}`;
   } catch {
@@ -461,11 +465,18 @@ export async function mirrorHostRoute(request: Request, env: Env, hostname: stri
   if (upstreamCookies) headers.set('cookie', upstreamCookies); else headers.delete('cookie');
 
   const mirrorOrigin = incoming.origin;
-  if (headers.get('origin') === mirrorOrigin) headers.set('origin', configuredOrigin.origin);
   const referer = headers.get('referer');
+  let mappedRefererValue: string | null = null;
   if (referer) {
-    const mapped = await mappedReferer(referer, mirrorOrigin, configuredOrigin, env, row);
-    if (mapped) headers.set('referer', mapped); else headers.delete('referer');
+    mappedRefererValue = await mappedReferer(referer, mirrorOrigin, configuredOrigin, env, row);
+    if (mappedRefererValue) headers.set('referer', mappedRefererValue); else headers.delete('referer');
+  }
+  if (headers.get('origin') === mirrorOrigin) {
+    let upstreamDocumentOrigin = target.origin;
+    if (mappedRefererValue) {
+      try { upstreamDocumentOrigin = new URL(mappedRefererValue).origin; } catch {}
+    }
+    headers.set('origin', upstreamDocumentOrigin);
   }
 
   const controller = new AbortController();
@@ -506,8 +517,7 @@ export async function mirrorHostRoute(request: Request, env: Env, hostname: stri
   const relayCache: RelayCache = new Map();
   const location = output.get('location');
   if (location) {
-    const navigation = request.headers.get('sec-fetch-mode') === 'navigate';
-    output.set('location', await rewriteUrl(location, target, configuredOrigin, mirrorOrigin, env, row, relayCache, !navigation));
+    output.set('location', await rewriteUrl(location, target, configuredOrigin, mirrorOrigin, env, row, relayCache, true));
   }
   const allowOrigin = output.get('access-control-allow-origin');
   if (allowOrigin === configuredOrigin.origin || allowOrigin === target.origin) output.set('access-control-allow-origin', mirrorOrigin);
