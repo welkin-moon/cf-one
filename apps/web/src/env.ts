@@ -35,6 +35,7 @@ export interface Session {
   exp: number;
   device: string;
   csrf: string;
+  epoch?: number;
   deviceChanged?: boolean;
 }
 
