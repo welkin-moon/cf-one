@@ -8,7 +8,7 @@ const GOOGLE_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
-const OAUTH_REDIRECT = 'https://lunarlab.uk/api/storage/google/callback';
+const OAUTH_REDIRECT = 'https://20100823.xyz/api/storage/google/callback';
 const ROOT_FOLDER_NAME = 'LMS Storage';
 const DEFAULT_CHUNK_BYTES = 16 * 1024 * 1024;
 const GOOGLE_CHUNK_UNIT = 256 * 1024;
@@ -648,7 +648,7 @@ async function googleCallback(request: Request, env: Env): Promise<Response> {
   };
   providerQuotaCache = null;
   await audit(env, session, 'storage.google.connect', 'google-drive');
-  return Response.redirect('https://lunarlab.uk/app/admin?drive=connected', 302);
+  return Response.redirect('https://20100823.xyz/app/admin?drive=connected', 302);
 }
 
 async function disconnectGoogle(request: Request, env: Env): Promise<Response> {
