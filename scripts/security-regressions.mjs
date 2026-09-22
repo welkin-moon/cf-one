@@ -68,7 +68,9 @@ assert.match(index, /path === '\/healthz'[\s\S]*?json\(\{ ok: true \}\)/, 'publi
 assert.match(auth, /const SESSION_COOKIE = '__Host-cf_one_session'/);
 assert.match(auth, /SameSite=Strict/);
 assert.match(auth, /export async function readSession[\s\S]*?assertSessionSecret\(env\)/, 'session verification must fail closed without a strong signing value');
-assert.match(auth, /SELECT email, role, status FROM users WHERE id = \?1/, 'protected member requests must re-check current D1 account state');
+assert.match(auth, /SELECT email, role, status, session_epoch FROM users WHERE id = \?1/, 'protected member requests must re-check current D1 account and session revocation state');
+assert.match(auth, /session\.epoch \?\? 0/, 'forced logout must invalidate older signed member sessions');
+assert.match(auth, /FROM devices WHERE user_id = \?1 AND device_hash = \?2/, 'revoked devices must lose access immediately');
 assert.match(auth, /user\.status !== 'active'/, 'disabled users must lose access immediately');
 assert.match(auth, /session\.sub === OWNER_ID && session\.email === OWNER_EMAIL/, 'owner identity must be fixed independently of editable user data');
 assert.match(auth, /export async function requireOwner/, 'infrastructure actions need a separate owner gate');
