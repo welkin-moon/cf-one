@@ -84,7 +84,6 @@ export async function adminRoutes(request: Request, env: Env, path: string): Pro
   }
 
   if (path === '/api/admin/users' && request.method === 'GET') {
-    ownerOnly(session);
     const result = await env.DB.prepare(`SELECT id, email, display_name, role, status, created_at, last_login_at,
       CASE WHEN id = 'owner' THEN 1 ELSE 0 END AS owner
       FROM users ORDER BY owner DESC, created_at ASC LIMIT 500`).all();
@@ -93,10 +92,10 @@ export async function adminRoutes(request: Request, env: Env, path: string): Pro
 
   const userMatch = path.match(/^\/api\/admin\/users\/([0-9A-Za-z-]{1,128})$/);
   if (userMatch && request.method === 'PATCH') {
-    ownerOnly(session);
     requireCsrf(request, session);
     const userId = userMatch[1]!;
     if (userId === 'owner') throw new HttpError(403, 'owner identity cannot be modified');
+    if (!isOwner(session) && userId === session.sub) throw new HttpError(403, 'administrators cannot modify their own account');
     const body = await readJson<{ role?: unknown; status?: unknown }>(request);
     const updates: string[] = [];
     const values: unknown[] = [];
