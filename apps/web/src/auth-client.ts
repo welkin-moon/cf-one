@@ -254,13 +254,17 @@ function renderLogin() {
   const identifierField = textField("用户名或邮箱", "email", "text", "admin 或 you@example.com");
   const password = passwordField("密码", "password", "current-password", "输入密码");
   const registration = h("div", { class: "stack", hidden: true },
-    h("div", { class: "callout", text: "这是这个邮箱第一次加入。再填写显示名称和邀请码即可创建账号。" }),
+    h("div", { class: "callout", text: "首次加入或管理员重置密码时，需要填写显示名称和邀请码。" }),
     textField("显示名称", "displayName", "text", "你希望别人看到的名字", false),
     passwordField("邀请码", "inviteCode", "one-time-code", "输入邀请码")
   );
   const submit = h("button", { class: "button filled", type: "submit", text: "登录" });
   const form = h("form", { novalidate: true }, identifierField, password, registration, message, submit);
   const identifier = identifierField.querySelector("input");
+  const loginParams = new URLSearchParams(location.search);
+  const setupEmail = String(loginParams.get("email") || "").trim().toLowerCase();
+  const setupInvite = String(loginParams.get("invite") || "").trim();
+  if (identifier && setupEmail) identifier.value = setupEmail;
 
   const setMessage = (text, error = false, success = false) => {
     message.textContent = text || "";
@@ -270,9 +274,13 @@ function renderLogin() {
   const setRegistrationVisible = visible => {
     registration.hidden = !visible;
     for (const control of registration.querySelectorAll("input,button,select,textarea")) control.disabled = !visible;
-    submit.textContent = visible ? "创建账号" : "登录";
+    if (visible && setupInvite) {
+      const invite = registration.querySelector("input[name=inviteCode]");
+      if (invite) invite.value = setupInvite;
+    }
+    submit.textContent = visible ? "设置密码并登录" : "登录";
   };
-  setRegistrationVisible(false);
+  setRegistrationVisible(Boolean(setupEmail && setupInvite));
 
   const resetRegistration = () => {
     if (registration.hidden) return;
