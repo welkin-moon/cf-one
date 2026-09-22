@@ -14,6 +14,7 @@ import {
 import { consumeAuthChallenge, storeAuthChallenge } from './auth-challenge';
 import { HttpError, json, readJson } from './http';
 import { constantTimeEqual, rateLimit, requireCsrf } from './security';
+import { consumeInvitationCode, releaseInvitationCode } from './invitations';
 
 interface UserRow {
   id: string;
@@ -111,25 +112,41 @@ export async function authRoutes(request: Request, env: Env, path: string): Prom
         }
       }
     } else {
-      if (!env.INVITE_CODE) throw new HttpError(503, 'registration is disabled until INVITE_CODE is configured');
-      const inviteCode = text(body.inviteCode);
+      const inviteCode = text(body.inviteCode).trim();
       const registrationVerifier = text(body.verifier);
-      if (!inviteCode || !constantTimeEqual(inviteCode, env.INVITE_CODE)) throw new HttpError(403, 'invalid invite code');
+      if (!inviteCode) throw new HttpError(403, 'invalid invite code');
       if (!/^[A-Za-z0-9_-]{43}$/.test(registrationVerifier)) throw new HttpError(400, 'registration verifier required');
       if (!constantTimeEqual(await verifierProof(registrationVerifier, challenge.challenge), proof)) throw new HttpError(403, 'invalid registration proof');
-      const credentialBox = await sealVerifier(registrationVerifier, env);
-      if (!user) {
-        const id = crypto.randomUUID();
-        const displayName = text(body.displayName).trim().slice(0, 60) || email.split('@')[0] || email;
-        await env.DB.prepare(`INSERT OR IGNORE INTO users (id, email, display_name, role, status)
-          VALUES (?1, ?2, ?3, 'member', 'active')`).bind(id, email, displayName).run();
+
+      const inviteId = await consumeInvitationCode(env, inviteCode);
+      const legacyInvite = !inviteId && Boolean(env.INVITE_CODE) && constantTimeEqual(inviteCode, env.INVITE_CODE);
+      if (!inviteId && !legacyInvite) throw new HttpError(403, 'invalid or expired invite code');
+
+      try {
+        const credentialBox = await sealVerifier(registrationVerifier, env);
+        if (!user) {
+          const id = crypto.randomUUID();
+          const displayName = text(body.displayName).trim().slice(0, 60) || email.split('@')[0] || email;
+          await env.DB.prepare(`INSERT OR IGNORE INTO users (id, email, display_name, role, status)
+            VALUES (?1, ?2, ?3, 'member', 'active')`).bind(id, email, displayName).run();
+          user = await findUser(env, email);
+          if (!user) throw new HttpError(500, 'account bootstrap failed');
+          if (user.credential_box) throw new HttpError(409, 'account was registered concurrently; retry login');
+        }
+        if (inviteId) {
+          await env.DB.prepare(`INSERT INTO invitation_uses (id, invite_id, user_id, email)
+            VALUES (?1, ?2, ?3, ?4)`).bind(crypto.randomUUID(), inviteId, user.id, email).run();
+        }
+        await env.DB.prepare(`UPDATE users SET credential_salt = ?1, credential_box = ?2, credential_iterations = ?3
+          WHERE id = ?4 AND status = 'active'`).bind(challenge.salt, credentialBox, challenge.iterations, user.id).run();
         user = await findUser(env, email);
-        if (!user) throw new HttpError(500, 'account bootstrap failed');
-        if (user.credential_box) throw new HttpError(409, 'account was registered concurrently; retry login');
+      } catch (error) {
+        if (inviteId) {
+          if (user?.id) await env.DB.prepare('DELETE FROM invitation_uses WHERE invite_id = ?1 AND user_id = ?2').bind(inviteId, user.id).run().catch(() => {});
+          await releaseInvitationCode(env, inviteId).catch(() => {});
+        }
+        throw error;
       }
-      await env.DB.prepare(`UPDATE users SET credential_salt = ?1, credential_box = ?2, credential_iterations = ?3
-        WHERE id = ?4 AND status = 'active'`).bind(challenge.salt, credentialBox, challenge.iterations, user.id).run();
-      user = await findUser(env, email);
     }
 
     if (!user || user.status !== 'active') throw new HttpError(403, 'account unavailable');
