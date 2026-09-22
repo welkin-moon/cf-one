@@ -428,12 +428,12 @@ async function renderAdmin() {
     for (const [label, ok] of checks) statusGrid.append(h("div", { class: "status-card" }, h("span", { class: "muted tiny", text: label }), h("strong", null, h("span", { class: "status-dot " + (ok ? "ok" : "warn") }), ok ? "可用" : "未启用")));
   } catch (error) { statusGrid.append(emptyState("状态暂时不可用", error.message, "!")); }
 
-  if (host === "lunarlab.uk") await renderStorageAdmin(sections);
+  if (host === "20100823.xyz") await renderStorageAdmin(sections);
+  await renderOwnerUsers(sections);
   if (!session.owner) {
-    sections.append(panel("管理员账号", "你可以处理成员的存储与中转额度；账号角色与域名设置仍由站主修改。", h("span", { class: "pill success", text: "管理员" })));
+    sections.append(panel("管理员账号", "你可以管理成员账号、存储与中转额度；域名设置仍由站主修改。", h("span", { class: "pill success", text: "管理员" })));
     return;
   }
-  await renderOwnerUsers(sections);
   await renderDnsAdmin(sections);
 }
 
@@ -543,7 +543,7 @@ async function renderStorageAdmin(sections) {
     const configForm = h("form", null,
       field("OAuth Client ID", "clientId", "text", "...apps.googleusercontent.com", true),
       field("OAuth Client Secret", "clientSecret", "password", "仅在保存时提交", true),
-      h("div", { class: "callout", text: "Google Cloud 中的授权回调地址填写：https://lunarlab.uk/api/storage/google/callback" }),
+      h("div", { class: "callout", text: "Google Cloud 中的授权回调地址填写：https://20100823.xyz/api/storage/google/callback" }),
       h("button", { class: "button tonal", type: "submit", text: status.configured ? "替换 OAuth 配置" : "保存 OAuth 配置" })
     );
     configForm.addEventListener("submit", async event => {
@@ -575,7 +575,7 @@ async function renderOwnerUsers(sections) {
     for (const user of response.users || []) {
       const isOwner = Boolean(user.owner);
       const actions = [];
-      if (!isOwner) {
+      if (!isOwner && (session.owner || user.id !== session.id)) {
         actions.push(h("button", { class: "button tonal", text: user.role === "admin" ? "改为成员" : "设为管理员", onclick: async () => { const next = user.role === "admin" ? "member" : "admin"; const ok = await confirmAction("修改成员权限？", user.email + " 将变为" + (next === "admin" ? "管理员" : "普通成员") + "。", false); if (!ok) return; try { await api("/api/admin/users/" + user.id, { method: "PATCH", body: { role: next } }); await loadUsers(); } catch (error) { showToast(error.message, true); } } }));
         actions.push(h("button", { class: user.status === "active" ? "button danger" : "button tonal", text: user.status === "active" ? "停用" : "恢复", onclick: async () => { const next = user.status === "active" ? "disabled" : "active"; const ok = await confirmAction(next === "disabled" ? "停用账号？" : "恢复账号？", user.email, next === "disabled"); if (!ok) return; try { await api("/api/admin/users/" + user.id, { method: "PATCH", body: { status: next } }); await loadUsers(); } catch (error) { showToast(error.message, true); } } }));
       }
