@@ -2,6 +2,7 @@ import type { Env, Session } from './env';
 import { isOwner, requireAdmin } from './auth';
 import { HttpError, json, readJson } from './http';
 import { requireCsrf } from './security';
+import { invitationCodeHash, newInvitationCode } from './invitations';
 
 interface CloudflareEnvelope<T> {
   success: boolean;
@@ -83,10 +84,88 @@ export async function adminRoutes(request: Request, env: Env, path: string): Pro
     });
   }
 
+  if (path === '/api/admin/invites' && request.method === 'GET') {
+    const result = await env.DB.prepare(`SELECT i.id, i.code_prefix, i.note, i.max_uses, i.use_count, i.expires_at,
+      i.status, i.created_at, i.last_used_at, u.display_name AS created_by_name, u.email AS created_by_email
+      FROM invitation_codes i
+      LEFT JOIN users u ON u.id = i.created_by
+      ORDER BY i.created_at DESC LIMIT 500`).all();
+    return json({ invites: result.results, legacyInviteEnabled: Boolean(env.INVITE_CODE) });
+  }
+
+  if (path === '/api/admin/invites' && request.method === 'POST') {
+    requireCsrf(request, session);
+    const body = await readJson<{ note?: unknown; maxUses?: unknown; expiresInDays?: unknown }>(request);
+    const note = text(body.note).trim().slice(0, 160);
+    const maxUses = body.maxUses === undefined ? 1 : integer(body.maxUses);
+    const expiresInDays = body.expiresInDays === undefined ? 7 : integer(body.expiresInDays);
+    if (maxUses === null || maxUses < 1 || maxUses > 10000) throw new HttpError(400, 'max uses must be 1-10000');
+    if (expiresInDays === null || expiresInDays < 0 || expiresInDays > 3650) throw new HttpError(400, 'expiry must be 0-3650 days');
+    const code = newInvitationCode();
+    const id = crypto.randomUUID();
+    const expiresAt = expiresInDays === 0 ? null : Math.floor(Date.now() / 1000) + expiresInDays * 86400;
+    await env.DB.prepare(`INSERT INTO invitation_codes
+      (id, code_hash, code_prefix, note, created_by, max_uses, expires_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`)
+      .bind(id, await invitationCodeHash(code), code.slice(0, 12), note, session.sub, maxUses, expiresAt).run();
+    await audit(env, session, 'invite.create', id);
+    return json({ invite: { id, code, codePrefix: code.slice(0, 12), note, maxUses, useCount: 0, expiresAt, status: 'active' } }, 201);
+  }
+
+  const inviteUsesMatch = path.match(/^\/api\/admin\/invites\/([0-9a-f-]{36})\/uses$/i);
+  if (inviteUsesMatch && request.method === 'GET') {
+    const result = await env.DB.prepare(`SELECT x.id, x.email, x.used_at, u.display_name, u.id AS user_id
+      FROM invitation_uses x
+      LEFT JOIN users u ON u.id = x.user_id
+      WHERE x.invite_id = ?1
+      ORDER BY x.used_at DESC LIMIT 500`).bind(inviteUsesMatch[1]!).all();
+    return json({ uses: result.results });
+  }
+
+  const inviteMatch = path.match(/^\/api\/admin\/invites\/([0-9a-f-]{36})$/i);
+  if (inviteMatch && request.method === 'PATCH') {
+    requireCsrf(request, session);
+    const body = await readJson<{ status?: unknown; note?: unknown; maxUses?: unknown }>(request);
+    const current = await env.DB.prepare('SELECT use_count FROM invitation_codes WHERE id = ?1').bind(inviteMatch[1]!).first<{ use_count: number }>();
+    if (!current) throw new HttpError(404, 'invite not found');
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    if (body.status !== undefined) {
+      if (body.status !== 'active' && body.status !== 'revoked') throw new HttpError(400, 'invalid invite status');
+      values.push(body.status);
+      updates.push(`status = ?${values.length}`);
+    }
+    if (body.note !== undefined) {
+      values.push(text(body.note).trim().slice(0, 160));
+      updates.push(`note = ?${values.length}`);
+    }
+    if (body.maxUses !== undefined) {
+      const maxUses = integer(body.maxUses);
+      if (maxUses === null || maxUses < current.use_count || maxUses < 1 || maxUses > 10000) throw new HttpError(400, 'max uses is invalid');
+      values.push(maxUses);
+      updates.push(`max_uses = ?${values.length}`);
+    }
+    if (!updates.length) throw new HttpError(400, 'no invite fields supplied');
+    values.push(inviteMatch[1]!);
+    await env.DB.prepare(`UPDATE invitation_codes SET ${updates.join(', ')} WHERE id = ?${values.length}`).bind(...values).run();
+    await audit(env, session, 'invite.update', inviteMatch[1]!);
+    return json({ ok: true });
+  }
+
+  if (inviteMatch && request.method === 'DELETE') {
+    requireCsrf(request, session);
+    const current = await env.DB.prepare('SELECT use_count FROM invitation_codes WHERE id = ?1').bind(inviteMatch[1]!).first<{ use_count: number }>();
+    if (!current) throw new HttpError(404, 'invite not found');
+    if (current.use_count > 0) throw new HttpError(409, 'invite has usage history; revoke it instead');
+    await env.DB.prepare('DELETE FROM invitation_codes WHERE id = ?1').bind(inviteMatch[1]!).run();
+    await audit(env, session, 'invite.delete', inviteMatch[1]!);
+    return json({ ok: true });
+  }
+
   if (path === '/api/admin/users' && request.method === 'GET') {
-    const result = await env.DB.prepare(`SELECT id, email, display_name, role, status, created_at, last_login_at,
+    const result = await env.DB.prepare(`SELECT id, email, display_name, role, status, created_at, last_login_at, deleted_at,
       CASE WHEN id = 'owner' THEN 1 ELSE 0 END AS owner
-      FROM users ORDER BY owner DESC, created_at ASC LIMIT 500`).all();
+      FROM users ORDER BY owner DESC, deleted_at IS NOT NULL, created_at ASC LIMIT 500`).all();
     return json({ users: result.results });
   }
 
@@ -96,9 +175,19 @@ export async function adminRoutes(request: Request, env: Env, path: string): Pro
     const userId = userMatch[1]!;
     if (userId === 'owner') throw new HttpError(403, 'owner identity cannot be modified');
     if (!isOwner(session) && userId === session.sub) throw new HttpError(403, 'administrators cannot modify their own account');
-    const body = await readJson<{ role?: unknown; status?: unknown }>(request);
+    const target = await env.DB.prepare('SELECT role, deleted_at FROM users WHERE id = ?1').bind(userId).first<{ role: 'member' | 'admin'; deleted_at: string | null }>();
+    if (!target) throw new HttpError(404, 'user not found');
+    if (target.deleted_at) throw new HttpError(409, 'deleted account cannot be modified');
+    const body = await readJson<{ role?: unknown; status?: unknown; displayName?: unknown }>(request);
+    if (!isOwner(session) && (target.role === 'admin' || body.role !== undefined)) throw new HttpError(403, 'site owner required to modify administrators');
     const updates: string[] = [];
     const values: unknown[] = [];
+    if (body.displayName !== undefined) {
+      const displayName = text(body.displayName).trim();
+      if (!displayName || displayName.length > 60) throw new HttpError(400, 'display name must be 1-60 characters');
+      values.push(displayName);
+      updates.push(`display_name = ?${values.length}`);
+    }
     if (body.role !== undefined) {
       if (body.role !== 'member' && body.role !== 'admin') throw new HttpError(400, 'role must be member or admin');
       values.push(body.role);
@@ -111,9 +200,27 @@ export async function adminRoutes(request: Request, env: Env, path: string): Pro
     }
     if (!updates.length) throw new HttpError(400, 'no user fields supplied');
     values.push(userId);
-    const result = await env.DB.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?${values.length}`).bind(...values).run();
-    if (!result.meta.changes) throw new HttpError(404, 'user not found');
+    await env.DB.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?${values.length}`).bind(...values).run();
     await audit(env, session, 'user.update', userId);
+    return json({ ok: true });
+  }
+
+  if (userMatch && request.method === 'DELETE') {
+    requireCsrf(request, session);
+    ownerOnly(session);
+    const userId = userMatch[1]!;
+    if (userId === 'owner' || userId === session.sub) throw new HttpError(403, 'owner identity cannot be deleted');
+    const target = await env.DB.prepare('SELECT id, deleted_at FROM users WHERE id = ?1').bind(userId).first<{ id: string; deleted_at: string | null }>();
+    if (!target) throw new HttpError(404, 'user not found');
+    if (target.deleted_at) return json({ ok: true });
+    const tombstoneEmail = `deleted+${userId.toLowerCase()}@invalid.local`;
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE users SET email = ?1, display_name = '已删除用户', username = NULL, role = 'member',
+        status = 'disabled', credential_salt = NULL, credential_box = NULL, credential_iterations = NULL,
+        must_change_password = 0, deleted_at = CURRENT_TIMESTAMP WHERE id = ?2`).bind(tombstoneEmail, userId),
+      env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(userId)
+    ]);
+    await audit(env, session, 'user.delete', userId);
     return json({ ok: true });
   }
 
