@@ -430,6 +430,7 @@ async function renderAdmin() {
 
   if (host === "20100823.xyz") await renderStorageAdmin(sections);
   await renderOwnerUsers(sections);
+  await renderInviteAdmin(sections);
   if (!session.owner) {
     sections.append(panel("管理员账号", "你可以管理成员账号、存储与中转额度；域名设置仍由站主修改。", h("span", { class: "pill success", text: "管理员" })));
     return;
@@ -568,21 +569,168 @@ async function renderStorageAdmin(sections) {
 
 async function renderOwnerUsers(sections) {
   const users = h("div", { class: "list" });
-  sections.append(panel("成员与权限", "站主可以调整成员角色或停用账号。", users));
-  async function loadUsers() {
-    const response = await api("/api/admin/users");
+  const search = h("input", { type: "search", placeholder: "搜索昵称或邮箱", autocomplete: "off" });
+  const summary = h("div", { class: "muted tiny" });
+  sections.append(panel("用户管理", session.owner ? "查看、搜索和编辑成员；站主还可以调整管理员权限和删除账号。" : "查看、搜索和编辑普通成员；管理员账号只能由站主管理。", h("div", { class: "row between" }, search, summary), users));
+  let allUsers = [];
+
+  function drawUsers() {
+    const query = String(search.value || "").trim().toLowerCase();
     clear(users);
-    for (const user of response.users || []) {
+    const visible = allUsers.filter(user => !query || String(user.email || "").toLowerCase().includes(query) || String(user.display_name || "").toLowerCase().includes(query));
+    summary.textContent = visible.length + " / " + allUsers.length + " 个账号";
+    if (!visible.length) {
+      users.append(emptyState("没有匹配的账号", query ? "换个关键词试试。" : "当前还没有成员。", "○"));
+      return;
+    }
+    for (const user of visible) {
       const isOwner = Boolean(user.owner);
+      const deleted = Boolean(user.deleted_at);
       const actions = [];
-      if (!isOwner && (session.owner || user.id !== session.id)) {
-        actions.push(h("button", { class: "button tonal", text: user.role === "admin" ? "改为成员" : "设为管理员", onclick: async () => { const next = user.role === "admin" ? "member" : "admin"; const ok = await confirmAction("修改成员权限？", user.email + " 将变为" + (next === "admin" ? "管理员" : "普通成员") + "。", false); if (!ok) return; try { await api("/api/admin/users/" + user.id, { method: "PATCH", body: { role: next } }); await loadUsers(); } catch (error) { showToast(error.message, true); } } }));
-        actions.push(h("button", { class: user.status === "active" ? "button danger" : "button tonal", text: user.status === "active" ? "停用" : "恢复", onclick: async () => { const next = user.status === "active" ? "disabled" : "active"; const ok = await confirmAction(next === "disabled" ? "停用账号？" : "恢复账号？", user.email, next === "disabled"); if (!ok) return; try { await api("/api/admin/users/" + user.id, { method: "PATCH", body: { status: next } }); await loadUsers(); } catch (error) { showToast(error.message, true); } } }));
+      const canManage = !isOwner && !deleted && user.id !== session.id && (session.owner || user.role !== "admin");
+      if (canManage) {
+        actions.push(h("button", { class: "button tonal", text: "改昵称", onclick: async () => {
+          const next = prompt("新的显示名称", user.display_name || "");
+          if (next === null) return;
+          try { await api("/api/admin/users/" + user.id, { method: "PATCH", body: { displayName: next } }); await loadUsers(); showToast("昵称已更新"); }
+          catch (error) { showToast(error.message, true); }
+        }}));
+        actions.push(h("button", { class: user.status === "active" ? "button danger" : "button tonal", text: user.status === "active" ? "停用" : "恢复", onclick: async () => {
+          const next = user.status === "active" ? "disabled" : "active";
+          const ok = await confirmAction(next === "disabled" ? "停用账号？" : "恢复账号？", user.email, next === "disabled");
+          if (!ok) return;
+          try { await api("/api/admin/users/" + user.id, { method: "PATCH", body: { status: next } }); await loadUsers(); }
+          catch (error) { showToast(error.message, true); }
+        }}));
       }
-      users.append(h("div", { class: "list-item" }, h("div", { class: "row between" }, h("div", null, h("strong", { text: isOwner ? "admin" : (user.display_name || user.email) }), h("div", { class: "muted tiny", text: isOwner ? "站主" : user.email })), h("span", { class: "pill", text: isOwner ? "站主" : user.role === "admin" ? "管理员" : "成员" })), actions.length ? h("div", { class: "file-actions" }, ...actions) : null));
+      if (session.owner && !isOwner && !deleted && user.id !== session.id) {
+        actions.push(h("button", { class: "button tonal", text: user.role === "admin" ? "降为成员" : "设为管理员", onclick: async () => {
+          const next = user.role === "admin" ? "member" : "admin";
+          const ok = await confirmAction("修改账号权限？", user.email + " 将变为" + (next === "admin" ? "管理员" : "普通成员") + "。", false);
+          if (!ok) return;
+          try { await api("/api/admin/users/" + user.id, { method: "PATCH", body: { role: next } }); await loadUsers(); }
+          catch (error) { showToast(error.message, true); }
+        }}));
+        actions.push(h("button", { class: "button danger", text: "删除账号", onclick: async () => {
+          const ok = await confirmAction("删除账号？", "会注销 " + user.email + " 的登录凭据并释放邮箱；历史内容保留。", true);
+          if (!ok) return;
+          try { await api("/api/admin/users/" + user.id, { method: "DELETE" }); await loadUsers(); showToast("账号已删除"); }
+          catch (error) { showToast(error.message, true); }
+        }}));
+      }
+      const roleText = isOwner ? "站主" : deleted ? "已删除" : user.role === "admin" ? "管理员" : user.status === "active" ? "成员" : "已停用";
+      const meta = deleted
+        ? "删除于 " + formatDate(user.deleted_at)
+        : "注册 " + formatDate(user.created_at) + " · 最近登录 " + formatDate(user.last_login_at);
+      users.append(h("div", { class: "list-item" },
+        h("div", { class: "row between" },
+          h("div", null, h("strong", { text: isOwner ? "admin" : (user.display_name || user.email) }), h("div", { class: "muted tiny", text: isOwner ? "站主账号" : user.email }), h("div", { class: "muted tiny", text: meta })),
+          h("span", { class: "pill " + ((!deleted && user.status === "active") ? "success" : ""), text: roleText })
+        ),
+        actions.length ? h("div", { class: "file-actions" }, ...actions) : null
+      ));
     }
   }
-  try { await loadUsers(); } catch (error) { users.append(emptyState("成员列表暂时不可用", error.message, "!")); }
+
+  async function loadUsers() {
+    const response = await api("/api/admin/users");
+    allUsers = response.users || [];
+    drawUsers();
+  }
+  search.addEventListener("input", drawUsers);
+  try { await loadUsers(); } catch (error) { users.append(emptyState("用户列表暂时不可用", error.message, "!")); }
+}
+
+async function renderInviteAdmin(sections) {
+  const generated = h("div", { class: "stack" });
+  const list = h("div", { class: "list" });
+  const form = h("form", null,
+    field("备注", "note", "text", "例如：社团成员 / 临时邀请", false),
+    field("可使用次数", "maxUses", "number", "1", true, "1 表示一次性邀请码。", { min: "1", max: "10000", value: "1" }),
+    field("有效天数", "expiresInDays", "number", "7", true, "0 表示永不过期。", { min: "0", max: "3650", value: "7" }),
+    h("button", { class: "button filled", type: "submit", text: "生成邀请码" })
+  );
+  sections.append(panel("邀请码管理", "生成、吊销、调整使用次数，并查看每个邀请码的使用记录。邀请码明文只在生成时显示一次。", form, generated, list));
+
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    const values = formValues(form);
+    try {
+      const response = await api("/api/admin/invites", { method: "POST", body: {
+        note: values.note || "",
+        maxUses: Number(values.maxUses || 1),
+        expiresInDays: Number(values.expiresInDays || 0)
+      }});
+      const code = response.invite.code;
+      clear(generated);
+      generated.append(h("div", { class: "callout" },
+        h("strong", { text: code }),
+        h("div", { class: "muted tiny", text: "请现在复制保存，之后后台只显示前缀。" }),
+        h("button", { class: "button tonal", type: "button", text: "复制", onclick: async () => {
+          try { await navigator.clipboard.writeText(code); showToast("邀请码已复制"); } catch { showToast("复制失败，请手动复制", true); }
+        }})
+      ));
+      form.querySelector("[name=note]").value = "";
+      await loadInvites();
+    } catch (error) { showToast(error.message, true); }
+  });
+
+  async function showUses(invite, holder) {
+    clear(holder);
+    try {
+      const response = await api("/api/admin/invites/" + invite.id + "/uses");
+      if (!(response.uses || []).length) { holder.append(h("div", { class: "muted tiny", text: "还没有人使用。" })); return; }
+      for (const use of response.uses) holder.append(h("div", { class: "muted tiny", text: (use.display_name || use.email) + " · " + use.email + " · " + formatDate(use.used_at) }));
+    } catch (error) { holder.append(h("div", { class: "muted tiny", text: error.message })); }
+  }
+
+  async function loadInvites() {
+    const response = await api("/api/admin/invites");
+    clear(list);
+    const invites = response.invites || [];
+    if (!invites.length) { list.append(emptyState("还没有邀请码", "生成一个邀请码后即可让新成员注册。", "＋")); return; }
+    for (const invite of invites) {
+      const expired = invite.expires_at && Number(invite.expires_at) <= Math.floor(Date.now() / 1000);
+      const active = invite.status === "active" && !expired && Number(invite.use_count) < Number(invite.max_uses);
+      const usage = h("div", { class: "stack" });
+      const actions = [
+        h("button", { class: "button tonal", text: "使用记录", onclick: () => showUses(invite, usage) }),
+        h("button", { class: "button tonal", text: invite.status === "active" ? "吊销" : "重新启用", onclick: async () => {
+          try { await api("/api/admin/invites/" + invite.id, { method: "PATCH", body: { status: invite.status === "active" ? "revoked" : "active" } }); await loadInvites(); }
+          catch (error) { showToast(error.message, true); }
+        }}),
+        h("button", { class: "button tonal", text: "编辑", onclick: async () => {
+          const note = prompt("邀请码备注", invite.note || "");
+          if (note === null) return;
+          const maxUses = prompt("最大使用次数（不能小于已使用次数）", String(invite.max_uses || 1));
+          if (maxUses === null) return;
+          try { await api("/api/admin/invites/" + invite.id, { method: "PATCH", body: { note, maxUses: Number(maxUses) } }); await loadInvites(); }
+          catch (error) { showToast(error.message, true); }
+        }})
+      ];
+      if (Number(invite.use_count) === 0) actions.push(h("button", { class: "button danger", text: "删除", onclick: async () => {
+        const ok = await confirmAction("删除邀请码？", invite.code_prefix + "…", true);
+        if (!ok) return;
+        try { await api("/api/admin/invites/" + invite.id, { method: "DELETE" }); await loadInvites(); }
+        catch (error) { showToast(error.message, true); }
+      }}));
+      const expiry = invite.expires_at ? formatDate(new Date(Number(invite.expires_at) * 1000).toISOString()) : "永不过期";
+      list.append(h("div", { class: "list-item" },
+        h("div", { class: "row between" },
+          h("div", null,
+            h("strong", { text: invite.code_prefix + "…" }),
+            h("div", { class: "muted tiny", text: (invite.note || "无备注") + " · " + Number(invite.use_count || 0) + "/" + Number(invite.max_uses || 0) + " 次 · " + expiry }),
+            h("div", { class: "muted tiny", text: "创建 " + formatDate(invite.created_at) + (invite.last_used_at ? " · 最近使用 " + formatDate(invite.last_used_at) : "") })
+          ),
+          h("span", { class: "pill " + (active ? "success" : ""), text: expired ? "已过期" : invite.status === "revoked" ? "已吊销" : Number(invite.use_count) >= Number(invite.max_uses) ? "已用完" : "可用" })
+        ),
+        h("div", { class: "file-actions" }, ...actions),
+        usage
+      ));
+    }
+  }
+
+  try { await loadInvites(); } catch (error) { list.append(emptyState("邀请码暂时不可用", error.message, "!")); }
 }
 
 async function renderDnsAdmin(sections) {
