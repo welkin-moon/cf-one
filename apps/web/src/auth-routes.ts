@@ -25,6 +25,8 @@ interface UserRow {
   credential_salt: string | null;
   credential_box: string | null;
   credential_iterations: number | null;
+  must_change_password: number;
+  session_epoch: number;
 }
 
 function text(value: unknown): string {
@@ -53,8 +55,9 @@ function diagnosticName(error: unknown): string {
 }
 
 async function findUser(env: Env, email: string): Promise<UserRow | null> {
-  return env.DB.prepare(`SELECT id, email, display_name, role, status, credential_salt, credential_box, credential_iterations
-    FROM users WHERE email = ?1`).bind(email).first<UserRow>();
+  return env.DB.prepare(`SELECT id, email, display_name, role, status, credential_salt, credential_box, credential_iterations,
+      must_change_password, session_epoch
+    FROM users WHERE email = ?1 AND deleted_at IS NULL`).bind(email).first<UserRow>();
 }
 
 export async function authRoutes(request: Request, env: Env, path: string): Promise<Response | null> {
@@ -118,7 +121,11 @@ export async function authRoutes(request: Request, env: Env, path: string): Prom
       if (!/^[A-Za-z0-9_-]{43}$/.test(registrationVerifier)) throw new HttpError(400, 'registration verifier required');
       if (!constantTimeEqual(await verifierProof(registrationVerifier, challenge.challenge), proof)) throw new HttpError(403, 'invalid registration proof');
 
-      const inviteId = await consumeInvitationCode(env, inviteCode);
+      if (!user) {
+        const setting = await env.DB.prepare("SELECT value FROM site_settings WHERE key = 'registration_open'").first<{ value: string }>();
+        if (setting?.value === '0') throw new HttpError(403, 'registration is closed');
+      }
+      const inviteId = await consumeInvitationCode(env, inviteCode, email, Boolean(user?.must_change_password));
       if (!inviteId) throw new HttpError(403, 'invalid or expired invite code');
 
       try {
@@ -132,24 +139,21 @@ export async function authRoutes(request: Request, env: Env, path: string): Prom
           if (!user) throw new HttpError(500, 'account bootstrap failed');
           if (user.credential_box) throw new HttpError(409, 'account was registered concurrently; retry login');
         }
-        if (inviteId) {
-          await env.DB.prepare(`INSERT INTO invitation_uses (id, invite_id, user_id, email)
-            VALUES (?1, ?2, ?3, ?4)`).bind(crypto.randomUUID(), inviteId, user.id, email).run();
-        }
-        await env.DB.prepare(`UPDATE users SET credential_salt = ?1, credential_box = ?2, credential_iterations = ?3
+        await env.DB.prepare(`INSERT INTO invitation_uses (id, invite_id, user_id, email)
+          VALUES (?1, ?2, ?3, ?4)`).bind(crypto.randomUUID(), inviteId, user.id, email).run();
+        await env.DB.prepare(`UPDATE users SET credential_salt = ?1, credential_box = ?2, credential_iterations = ?3,
+          must_change_password = 0
           WHERE id = ?4 AND status = 'active'`).bind(challenge.salt, credentialBox, challenge.iterations, user.id).run();
         user = await findUser(env, email);
       } catch (error) {
-        if (inviteId) {
-          if (user?.id) await env.DB.prepare('DELETE FROM invitation_uses WHERE invite_id = ?1 AND user_id = ?2').bind(inviteId, user.id).run().catch(() => {});
-          await releaseInvitationCode(env, inviteId).catch(() => {});
-        }
+        if (user?.id) await env.DB.prepare('DELETE FROM invitation_uses WHERE invite_id = ?1 AND user_id = ?2').bind(inviteId, user.id).run().catch(() => {});
+        await releaseInvitationCode(env, inviteId).catch(() => {});
         throw error;
       }
     }
 
     if (!user || user.status !== 'active') throw new HttpError(403, 'account unavailable');
-    const token = await issueSession({ id: user.id, email: user.email, role: user.role }, env, request);
+    const token = await issueSession({ id: user.id, email: user.email, role: user.role, sessionEpoch: user.session_epoch }, env, request);
     const sessionRequest = new Request(request.url, {
       headers: {
         cookie: `__Host-cf_one_session=${token}`,
